@@ -1,4 +1,5 @@
 /* ── SkillBank Africa — script.js ─────────────────────────── */
+import { runPaymentFlow } from './payment-api.js';
 
 /* ── State ── */
 let currentProduct = null;
@@ -139,16 +140,39 @@ function initiatePayment() {
   step1.style.display = 'none';
   step2.style.display = '';
 
-  /*
-   * In production, this is where you'd call the Lenco by Broadway
-   * payment API endpoint. For now we simulate a 2.8-second processing
-   * window, then show the download link.
-   */
+  const courseData = {
+    id: currentProduct.id,
+    name: currentProduct.title,
+    price: currentProduct.price
+  };
 
-  setTimeout(() => {
-    step2.style.display = 'none';
-    showDownload();
-  }, 2800);
+  const phone = document.getElementById('phoneInput').value.trim();
+
+  runPaymentFlow(courseData, phone, {
+    onOtpRequired: async () => {
+      const otp = prompt("Please enter the OTP sent to your phone (Use '000000' for sandbox):");
+      return otp;
+    },
+    onStkSent: (msg) => {
+      document.querySelector('.processing-text').textContent = msg;
+    },
+    onStatusChange: (status) => {
+      console.log("Payment status update:", status);
+      if (status === 'pay-offline') {
+        document.querySelector('.processing-text').textContent = "Check your phone for the STK prompt...";
+      }
+    },
+    onSuccess: () => {
+      step2.style.display = 'none';
+      showDownload();
+    },
+    onError: (errMsg) => {
+      alert("Payment Error: " + errMsg);
+      step2.style.display = 'none';
+      step1.style.display = '';
+      document.querySelector('.processing-text').textContent = "Processing your payment…";
+    }
+  });
 }
 
 /* ── Show download step ── */
@@ -222,3 +246,9 @@ document.querySelectorAll('.faq-question').forEach(button => {
     }
   });
 });
+
+/* ── Expose to Window (Module isolation) ── */
+window.openPayment = openPayment;
+window.closeModal = closeModal;
+window.selectMethod = selectMethod;
+window.initiatePayment = initiatePayment;
