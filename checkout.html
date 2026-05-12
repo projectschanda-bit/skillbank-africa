@@ -110,6 +110,12 @@
             transform: scale(1.02);
             box-shadow: 0 0 15px rgba(255, 73, 146, 0.15);
         }
+        .brand-logo {
+            width: 32px;
+            height: 32px;
+            object-fit: contain;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+        }
     </style>
 </head>
 <body class="text-on-background min-h-screen flex flex-col font-body-md font-['Bricolage_Grotesque'] font-[300]">
@@ -134,8 +140,11 @@
                         <span class="px-3 py-1 rounded-full bg-white/5 border border-white/10 font-label-sm text-label-sm text-on-surface-variant">Instant</span>
                     </div>
                     <div class="mb-8">
-                        <p class="font-label-sm text-label-sm text-on-surface-variant mb-1">TOTAL TO PAY</p>
-                        <p id="coursePrice" class="font-['Bricolage_Grotesque'] font-[800] text-price-xl bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">--</p>
+                        <p class="font-label-sm text-label-sm text-on-surface-variant mb-1 uppercase tracking-widest">Total to Pay</p>
+                        <div class="flex flex-col items-center">
+                            <p id="displayPriceUsd" class="font-['Bricolage_Grotesque'] font-[800] text-price-xl bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">$35</p>
+                            <p id="displayPriceLocal" class="font-label-sm text-label-sm text-on-surface-variant mt-1 font-medium">≈ K928</p>
+                        </div>
                     </div>
                     <div class="space-y-4">
                         <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">How it works</p>
@@ -185,11 +194,18 @@
                 <!-- Form Section -->
                 <form id="checkoutForm" class="space-y-6 mb-8">
                     <div id="phoneInputContainer" class="space-y-2">
-                        <label class="block font-label-sm text-label-sm text-on-surface-variant mb-2">Mobile Number</label>
+                        <label class="block font-label-sm text-label-sm text-on-surface-variant mb-2 uppercase tracking-wider">Country & Mobile Number</label>
                         <div class="flex bg-surface-container-low border border-white/10 rounded-xl overflow-hidden focus-within:border-secondary transition-all">
-                            <div class="px-4 py-3 bg-white/5 border-r border-white/10 flex items-center gap-2 text-on-surface">
-                                <span id="countryFlag">🇿🇲</span>
-                                <span id="countryCode">+260</span>
+                            <select id="countrySelect" class="bg-white/5 border-none text-on-surface focus:ring-0 px-4 py-3 font-body-md text-body-md border-r border-white/10 cursor-pointer appearance-none">
+                                <option value="zmw" selected>🇿🇲 Zambia</option>
+                                <option value="ngn">🇳🇬 Nigeria</option>
+                                <option value="kes">🇰🇪 Kenya</option>
+                                <option value="ghs">🇬🇭 Ghana</option>
+                                <option value="zar">🇿🇦 South Africa</option>
+                                <option value="other">🌍 Other</option>
+                            </select>
+                            <div class="px-4 py-3 bg-white/5 border-r border-white/10 flex items-center gap-2 text-on-surface min-w-[80px] justify-center">
+                                <span id="countryCodeDisplay">+260</span>
                             </div>
                             <input id="phoneNumber" class="flex-1 bg-transparent border-none text-on-surface placeholder:text-outline focus:ring-0 px-4 py-3 font-body-md text-body-md" placeholder="96 123 4567" type="tel" required/>
                         </div>
@@ -243,71 +259,115 @@
         const courseId = params.get('id') || localStorage.getItem('courseId') || '1';
         const title = params.get('title') || localStorage.getItem('courseTitle') || 'Premium Course';
         const priceUsd = parseFloat(params.get('priceUsd')) || parseFloat(localStorage.getItem('coursePriceUsd')) || 35;
-        const currency = (params.get('currency') || localStorage.getItem('selectedCurrency') || 'zmw').toLowerCase();
         const file = params.get('file') || localStorage.getItem('courseFile') || '';
 
         const RATES = {
-            zmw: { symbol: "K", rate: 26.5, flag: "🇿🇲", code: "+260", name: "Zambia" },
-            ngn: { symbol: "₦", rate: 1580, flag: "🇳🇬", code: "+234", name: "Nigeria" },
+            zmw: { symbol: "K", rate: 26.5, code: "+260", supportsMoMo: true },
+            ngn: { symbol: "₦", rate: 1580, code: "+234", supportsMoMo: true },
+            kes: { symbol: "KSh", rate: 130, code: "+254", supportsMoMo: false },
+            ghs: { symbol: "GH₵", rate: 14, code: "+233", supportsMoMo: false },
+            zar: { symbol: "R", rate: 18.5, code: "+27", supportsMoMo: false },
+            other: { symbol: "$", rate: 1, code: "", supportsMoMo: false },
         };
 
-        const rateData = RATES[currency] || RATES['zmw'];
-        const localPrice = Math.round(priceUsd * rateData.rate);
-        const formattedPrice = `${rateData.symbol}${localPrice.toLocaleString()}`;
-
-        document.getElementById('courseTitle').textContent = title;
-        document.getElementById('coursePrice').textContent = formattedPrice;
-        document.getElementById('countryFlag').textContent = rateData.flag;
-        document.getElementById('countryCode').textContent = rateData.code;
-        document.getElementById('payBtn').innerHTML = `Pay ${formattedPrice} Securely <span class="material-symbols-outlined">arrow_forward</span>`;
+        const LOGOS = {
+            mtn: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/af/MTN_Logo.svg/100px-MTN_Logo.svg.png',
+            airtel: 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/22/Airtel_logo.svg/100px-Airtel_logo.svg.png',
+            card: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Visa_Inc._logo.svg/100px-Visa_Inc._logo.svg.png'
+        };
 
         const methodContainer = document.getElementById('methodContainer');
+        const countrySelect = document.getElementById('countrySelect');
         let selectedMethod = '';
+        let currentLocalPrice = 0;
 
-        const methods = currency === 'ngn' 
-            ? [ { id: 'card', name: 'Card / Bank', icon: '💳' }, { id: 'mtn', name: 'MTN MoMo', icon: '📱' } ]
-            : [ { id: 'mtn', name: 'MTN MoMo', icon: '📱' }, { id: 'airtel', name: 'Airtel Money', icon: '📲' }, { id: 'card', name: 'Card', icon: '💳' } ];
-
-        methods.forEach((m, idx) => {
-            const div = document.createElement('div');
-            div.className = `method-btn rounded-[20px] bg-white/[0.03] border border-white/10 p-5 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-all ${idx === 0 ? 'selected' : ''}`;
-            div.innerHTML = `
-                <div class="flex items-center gap-4">
-                    <div class="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center flex-shrink-0 border border-white/10">
-                        <span class="text-xl">${m.icon}</span>
-                    </div>
-                    <div>
-                        <h4 class="font-body-lg text-body-lg text-on-surface">${m.name}</h4>
-                    </div>
-                </div>
-                <span class="material-symbols-outlined ${idx === 0 ? 'text-primary' : 'text-on-surface-variant'}">${idx === 0 ? 'radio_button_checked' : 'radio_button_unchecked'}</span>
-            `;
-            div.onclick = () => {
-                document.querySelectorAll('.method-btn').forEach(b => {
-                    b.classList.remove('selected');
-                    b.querySelector('.material-symbols-outlined').textContent = 'radio_button_unchecked';
-                    b.querySelector('.material-symbols-outlined').classList.remove('text-primary');
-                    b.querySelector('.material-symbols-outlined').classList.add('text-on-surface-variant');
-                });
-                div.classList.add('selected');
-                div.querySelector('.material-symbols-outlined').textContent = 'radio_button_checked';
-                div.querySelector('.material-symbols-outlined').classList.remove('text-on-surface-variant');
-                div.querySelector('.material-symbols-outlined').classList.add('text-primary');
-                selectedMethod = m.id;
-                
-                // Toggle phone input visibility based on method
-                const phoneInput = document.getElementById('phoneInputContainer');
-                if (m.id === 'card') {
-                    phoneInput.classList.add('hidden');
-                    document.getElementById('phoneNumber').required = false;
-                } else {
-                    phoneInput.classList.remove('hidden');
-                    document.getElementById('phoneNumber').required = true;
+        function renderMethods(currency, supportsMoMo) {
+            methodContainer.innerHTML = '';
+            
+            let availableMethods = [
+                { id: 'card', name: 'Visa / Mastercard', icon: LOGOS.card }
+            ];
+            
+            if (supportsMoMo) {
+                if (currency === 'zmw') {
+                    availableMethods.unshift(
+                        { id: 'mtn', name: 'MTN MoMo', icon: LOGOS.mtn },
+                        { id: 'airtel', name: 'Airtel Money', icon: LOGOS.airtel }
+                    );
+                } else if (currency === 'ngn') {
+                    availableMethods.unshift(
+                        { id: 'mtn', name: 'MTN MoMo', icon: LOGOS.mtn }
+                    );
                 }
-            };
-            methodContainer.appendChild(div);
-            if (idx === 0) selectedMethod = m.id;
-        });
+            }
+
+            availableMethods.forEach((m, idx) => {
+                const div = document.createElement('div');
+                div.className = `method-btn rounded-[20px] bg-white/[0.03] border border-white/10 p-5 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-all ${idx === 0 ? 'selected' : ''}`;
+                div.innerHTML = `
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center flex-shrink-0 border border-white/10">
+                            <img src="${m.icon}" class="brand-logo" alt="${m.name}">
+                        </div>
+                        <div>
+                            <h4 class="font-body-lg text-body-lg text-on-surface font-bold">${m.name}</h4>
+                        </div>
+                    </div>
+                    <span class="material-symbols-outlined ${idx === 0 ? 'text-primary' : 'text-on-surface-variant'}">${idx === 0 ? 'radio_button_checked' : 'radio_button_unchecked'}</span>
+                `;
+                div.onclick = () => selectMethod(m.id, div);
+                methodContainer.appendChild(div);
+                if (idx === 0) selectMethod(m.id, div);
+            });
+        }
+
+        function selectMethod(methodId, element) {
+            document.querySelectorAll('.method-btn').forEach(b => {
+                b.classList.remove('selected');
+                const icon = b.querySelector('.material-symbols-outlined');
+                icon.textContent = 'radio_button_unchecked';
+                icon.classList.remove('text-primary');
+                icon.classList.add('text-on-surface-variant');
+            });
+            
+            element.classList.add('selected');
+            const icon = element.querySelector('.material-symbols-outlined');
+            icon.textContent = 'radio_button_checked';
+            icon.classList.remove('text-on-surface-variant');
+            icon.classList.add('text-primary');
+            
+            selectedMethod = methodId;
+            
+            const phoneInput = document.getElementById('phoneInputContainer');
+            if (methodId === 'card') {
+                phoneInput.classList.add('opacity-40', 'pointer-events-none');
+                document.getElementById('phoneNumber').required = false;
+            } else {
+                phoneInput.classList.remove('opacity-40', 'pointer-events-none');
+                document.getElementById('phoneNumber').required = true;
+            }
+        }
+
+        function updateUI() {
+            const currency = countrySelect.value;
+            const rateData = RATES[currency] || RATES['zmw'];
+            
+            currentLocalPrice = Math.round(priceUsd * rateData.rate);
+            const formattedLocal = `${rateData.symbol}${currentLocalPrice.toLocaleString()}`;
+            
+            document.getElementById('displayPriceUsd').textContent = `$${priceUsd}`;
+            document.getElementById('displayPriceLocal').textContent = currency === 'other' ? '' : `≈ ${formattedLocal}`;
+            document.getElementById('countryCodeDisplay').textContent = rateData.code;
+            
+            const payText = currency === 'other' ? `$${priceUsd}` : formattedLocal;
+            document.getElementById('payBtn').innerHTML = `Pay ${payText} Securely <span class="material-symbols-outlined">arrow_forward</span>`;
+            
+            renderMethods(currency, rateData.supportsMoMo);
+        }
+
+        countrySelect.onchange = updateUI;
+        document.getElementById('courseTitle').textContent = title;
+        updateUI();
 
         document.getElementById('checkoutForm').onsubmit = async (e) => {
             e.preventDefault();
@@ -316,27 +376,29 @@
             payBtn.innerHTML = `<span class="animate-spin material-symbols-outlined">sync</span> Processing...`;
 
             try {
+                const currency = countrySelect.value;
+                const rateData = RATES[currency];
                 const rawPhone = document.getElementById('phoneNumber').value.replace(/\D/g, '');
                 const cleanCode = rateData.code.replace(/\D/g, '');
                 const fullPhone = cleanCode + (rawPhone.startsWith(cleanCode) ? rawPhone.slice(cleanCode.length) : rawPhone);
 
                 const result = await initiatePayment({
-                    amount: localPrice,
+                    amount: currentLocalPrice,
                     currency: currency.toUpperCase(),
                     email: document.getElementById('email').value,
                     phone: selectedMethod === 'card' ? '' : fullPhone,
                     method: selectedMethod,
                     courseId: courseId,
-                    courseName: title // Backend expects courseName
+                    courseName: title
                 });
 
                 if (result.success && result.reference) {
                     localStorage.setItem('paymentRef', result.reference);
-                    localStorage.setItem('selectedOperator', selectedMethod); // Save for processing page
+                    localStorage.setItem('selectedOperator', selectedMethod);
                     localStorage.setItem('paymentFile', file);
                     localStorage.setItem('paymentTitle', title);
                     localStorage.setItem('paymentCurrency', currency);
-                    localStorage.setItem('paymentAmount', formattedPrice);
+                    localStorage.setItem('paymentAmount', currency === 'other' ? `$${priceUsd}` : `${rateData.symbol}${currentLocalPrice.toLocaleString()}`);
                     localStorage.setItem('paymentEmail', document.getElementById('email').value);
                     localStorage.setItem('paymentDate', new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }));
 
@@ -348,7 +410,7 @@
                 console.error(err);
                 alert("Error: " + err.message);
                 payBtn.disabled = false;
-                payBtn.innerHTML = `Pay ${formattedPrice} Securely <span class="material-symbols-outlined">arrow_forward</span>`;
+                updateUI();
             }
         };
     </script>
