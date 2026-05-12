@@ -1,254 +1,378 @@
-/* ── SkillBank Africa — script.js ─────────────────────────── */
-import { runPaymentFlow } from './payment-api.js';
+// script.js — SkillBank Africa
+// CORRECT version: activeSession guards, 59-second countdown, proper modal steps.
+// Do NOT let any agent revert this to the isProcessing boolean pattern.
 
-/* ── State ── */
-let currentProduct = null;
-let selectedMethod = null;
+import { runPaymentFlow, PaymentSession } from "./payment-api.js";
 
-/* ── DOM refs ── */
-const overlay      = document.getElementById('modalOverlay');
-const modalClose   = document.getElementById('modalClose');
-const step1        = document.getElementById('step1');
-const step2        = document.getElementById('step2');
-const step3        = document.getElementById('step3');
-const mobileFields = document.getElementById('mobileFields');
-const cardFields   = document.getElementById('cardFields');
-const downloadLink = document.getElementById('downloadLink');
+// ─────────────────────────────────────────────────────────────────────────────
+// DOM REFS
+// ─────────────────────────────────────────────────────────────────────────────
+const payModal = document.getElementById("payModal");
+const modalBackdrop = document.getElementById("modalBackdrop");
+const step1 = document.getElementById("step1");
+const step2 = document.getElementById("step2");
+const step3 = document.getElementById("step3");
+const step4 = document.getElementById("step4");        // failure step
 
-/* ── Open payment modal ── */
-function openPayment(btn) {
-  const card = btn.closest('.course-card');
-  currentProduct = {
-    id:       card.dataset.id,
-    price:    parseInt(card.dataset.price, 10),
-    currency: card.dataset.currency,
-    title:    card.dataset.title,
-    file:     card.dataset.file
-  };
+const closeBtn = document.getElementById("closeModal");
+const payBtn = document.getElementById("payBtn");
+const phoneInput = document.getElementById("phoneInput");
+const methodBtns = document.querySelectorAll(".method-btn");
 
-  // Reset modal state
-  selectedMethod = null;
-  step1.style.display = '';
-  step2.style.display = 'none';
-  step3.style.display = 'none';
-  mobileFields.style.display = 'none';
-  cardFields.style.display   = 'none';
-  clearMethodSelection();
-  clearFields();
+const downloadLink = document.getElementById("downloadLink");  // step 3 download anchor
 
-  // Populate info
-  document.getElementById('modalProductTitle').textContent = currentProduct.title;
-  document.getElementById('modalPriceTag').textContent     =
-    '₦' + currentProduct.price.toLocaleString();
+// Countdown refs (inside step 2)
+const countdownWrap = document.getElementById("countdownWrap");
+const countdownNum = document.getElementById("countdownNum");
+const countdownArc = document.getElementById("countdownArc");
 
-  // Open overlay
-  overlay.classList.add('open');
-  overlay.setAttribute('aria-hidden', 'false');
-  document.body.style.overflow = 'hidden';
-}
+// Failure step refs
+const failMsg = document.getElementById("failMsg");
+const retryBtn = document.getElementById("retryBtn");
 
-/* ── Close modal ── */
-function closeModal() {
-  overlay.classList.remove('open');
-  overlay.setAttribute('aria-hidden', 'true');
-  document.body.style.overflow = '';
-  currentProduct   = null;
-  selectedMethod   = null;
-}
+// Currency converter refs
+const regionSelect = document.getElementById("currencySelect");
+const allCards = document.querySelectorAll(".course-card");
 
-modalClose.addEventListener('click', closeModal);
-overlay.addEventListener('click', (e) => {
-  if (e.target === overlay) closeModal();
-});
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeModal();
-});
+// ─────────────────────────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────────────────────────
+let activeSession = null;    // null = idle | PaymentSession = live payment
+let activeCourse = null;    // { id, name, price, file }
+let selectedMethod = "mtn";   // "mtn" | "airtel" | "card"
+let countdownTimer = null;
 
-/* ── Select payment method ── */
-function selectMethod(method) {
-  selectedMethod = method;
-  clearMethodSelection();
+// ─────────────────────────────────────────────────────────────────────────────
+// CURRENCY CONVERTER
+// Exchange rates vs USD — update these periodically or pull from an API
+// ─────────────────────────────────────────────────────────────────────────────
+const RATES = {
+  zmw: { symbol: "K", rate: 26.5, label: "🇿🇲 Zambia (K)" },
+  ngn: { symbol: "₦", rate: 1580, label: "🇳🇬 Nigeria (₦)" },
+  kes: { symbol: "KSh", rate: 129, label: "🇰🇪 Kenya (KSh)" },
+  ghs: { symbol: "GH₵", rate: 15.8, label: "🇬🇭 Ghana (GH₵)" },
+  ugx: { symbol: "USh", rate: 3720, label: "🇺🇬 Uganda (USh)" },
+  tzs: { symbol: "TSh", rate: 2580, label: "🇹🇿 Tanzania (TSh)" },
+  xof: { symbol: "CFA", rate: 615, label: "🇸🇳 Senegal (CFA)" },
+  etb: { symbol: "Br", rate: 113, label: "🇪🇹 Ethiopia (Br)" },
+  usd: { symbol: "$", rate: 1, label: "USD (International)" },
+};
 
-  const map = { mtn: 'btnMTN', airtel: 'btnAirtel', card: 'btnCard' };
-  document.getElementById(map[method]).classList.add('selected');
+let currentCurrency = localStorage.getItem('selectedCurrency') || "zmw";
 
-  mobileFields.style.display = (method === 'mtn' || method === 'airtel') ? '' : 'none';
-  cardFields.style.display   = (method === 'card') ? '' : 'none';
-
-  // Update mobile pay button label
-  if (method === 'mtn')    document.getElementById('mobilePayBtn').textContent = 'Pay Now via MTN MoMo';
-  if (method === 'airtel') document.getElementById('mobilePayBtn').textContent = 'Pay Now via Airtel Money';
-}
-
-function clearMethodSelection() {
-  ['btnMTN','btnAirtel','btnCard'].forEach(id => {
-    document.getElementById(id).classList.remove('selected');
-  });
-}
-
-function clearFields() {
-  ['phoneInput','cardNum','cardExp','cardCvv','cardName'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
-  });
-}
-
-/* ── Input formatters ── */
-document.getElementById('cardNum').addEventListener('input', function () {
-  let v = this.value.replace(/\D/g,'').substring(0,16);
-  this.value = v.replace(/(.{4})/g,'$1 ').trim();
-});
-document.getElementById('cardExp').addEventListener('input', function () {
-  let v = this.value.replace(/\D/g,'').substring(0,4);
-  if (v.length > 2) v = v.substring(0,2) + '/' + v.substring(2);
-  this.value = v;
-});
-document.getElementById('cardCvv').addEventListener('input', function () {
-  this.value = this.value.replace(/\D/g,'').substring(0,4);
-});
-
-/* ── Validate & initiate payment ── */
-function initiatePayment() {
-  if (!selectedMethod || !currentProduct) return;
-
-  let valid = false;
-
-  if (selectedMethod === 'mtn' || selectedMethod === 'airtel') {
-    const phone = document.getElementById('phoneInput').value.trim();
-    if (phone.length < 10) {
-      shakeField('phoneInput');
-      return;
+function updatePrices() {
+  const { symbol, rate } = RATES[currentCurrency];
+  allCards.forEach(card => {
+    const usd = parseFloat(card.dataset.price);
+    if (!isNaN(usd)) {
+      const converted = Math.round(usd * rate);
+      const priceEl = card.querySelector(".card-price");
+      if (priceEl) priceEl.textContent = `${symbol}${converted.toLocaleString()}`;
     }
-    valid = true;
+  });
+  // Also update the pay button label if step1 is visible
+  if (activeCourse) updatePayBtnLabel();
+}
+
+function updatePayBtnLabel() {
+  if (!activeCourse || !payBtn) return;
+  const { symbol, rate } = RATES[currentCurrency];
+  const converted = Math.round(activeCourse.price * rate);
+  const methodLabel =
+    selectedMethod === "airtel" ? "Airtel Money" :
+      selectedMethod === "card" ? "Card" :
+        "MTN MoMo";
+  payBtn.textContent = `Pay ${symbol}${converted.toLocaleString()} via ${methodLabel}`;
+}
+
+window.changeRegion = function(val) {
+  currentCurrency = val.toLowerCase();
+  localStorage.setItem('selectedCurrency', currentCurrency);
+  updatePrices();
+};
+
+if (regionSelect) {
+  // We don't need to populate dropdown as it's hardcoded in index.html
+  // But we can add the listener
+  regionSelect.addEventListener("change", () => {
+    window.changeRegion(regionSelect.value);
+  });
+  
+  // Initialize with current value
+  const saved = localStorage.getItem('selectedCurrency');
+  if (saved) {
+    regionSelect.value = saved;
+    currentCurrency = saved;
+  } else {
+    currentCurrency = regionSelect.value.toLowerCase() || 'zmw';
   }
-
-  if (selectedMethod === 'card') {
-    const num  = document.getElementById('cardNum').value.replace(/\s/g,'');
-    const exp  = document.getElementById('cardExp').value;
-    const cvv  = document.getElementById('cardCvv').value;
-    const name = document.getElementById('cardName').value.trim();
-    if (num.length < 16 || exp.length < 5 || cvv.length < 3 || name.length < 2) {
-      ['cardNum','cardExp','cardCvv','cardName'].forEach(shakeField);
-      return;
-    }
-    valid = true;
-  }
-
-  if (!valid) return;
-
-  /* Show processing screen */
-  step1.style.display = 'none';
-  step2.style.display = '';
-
-  const courseData = {
-    id: currentProduct.id,
-    name: currentProduct.title,
-    price: currentProduct.price
-  };
-
-  const phone = document.getElementById('phoneInput').value.trim();
-
-  runPaymentFlow(courseData, phone, {
-    onOtpRequired: async () => {
-      const otp = prompt("Please enter the OTP sent to your phone (Use '000000' for sandbox):");
-      return otp;
-    },
-    onStkSent: (msg) => {
-      document.querySelector('.processing-text').textContent = msg;
-    },
-    onStatusChange: (status) => {
-      console.log("Payment status update:", status);
-      if (status === 'pay-offline') {
-        document.querySelector('.processing-text').textContent = "Check your phone for the STK prompt...";
-      }
-    },
-    onSuccess: () => {
-      step2.style.display = 'none';
-      showDownload();
-    },
-    onError: (errMsg) => {
-      alert("Payment Error: " + errMsg);
-      step2.style.display = 'none';
-      step1.style.display = '';
-      document.querySelector('.processing-text').textContent = "Processing your payment…";
-    }
-  });
 }
 
-/* ── Show download step ── */
-function showDownload() {
-  step3.style.display = '';
+// Run on load
+updatePrices();
 
-  /*
-   * The download link points to the locally saved product file.
-   * Place your PDF / ZIP files in the same directory as index.html on Hostinger.
-   * The `download` attribute triggers a Save dialog in the browser.
-   */
-  downloadLink.href     = currentProduct.file;
-  downloadLink.download = currentProduct.file;
-  downloadLink.textContent = '⬇ Download ' + currentProduct.title;
-
-  /* Log purchase (localStorage as a simple local record) */
-  const purchases = JSON.parse(localStorage.getItem('sb_purchases') || '[]');
-  purchases.push({
-    id:        currentProduct.id,
-    title:     currentProduct.title,
-    price:     currentProduct.price,
-    currency:  currentProduct.currency,
-    method:    selectedMethod,
-    date:      new Date().toISOString(),
-    file:      currentProduct.file
-  });
-  localStorage.setItem('sb_purchases', JSON.stringify(purchases));
-}
-
-/* ── Shake animation for invalid fields ── */
-function shakeField(id) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.style.transition = 'transform .07s, border-color .2s';
-  el.style.borderColor = '#f72585';
-  const moves = ['-6px','6px','-4px','4px','0px'];
-  let i = 0;
-  const t = setInterval(() => {
-    el.style.transform = 'translateX(' + moves[i] + ')';
-    i++;
-    if (i >= moves.length) { clearInterval(t); el.style.transform = ''; }
-  }, 65);
-}
-
-/* ── Card number → spaces every 4 digits (already handled above) ── */
-/* ── Smooth scroll polyfill for older browsers ── */
-document.querySelectorAll('a[href^="#"]').forEach(a => {
-  a.addEventListener('click', e => {
-    const target = document.querySelector(a.getAttribute('href'));
-    if (target) {
-      e.preventDefault();
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  });
-});
-
-/* ── FAQ ACCORDION ── */
-document.querySelectorAll('.faq-question').forEach(button => {
-  button.addEventListener('click', () => {
-    const faqItem = button.parentElement;
-    const isOpen = faqItem.classList.contains('active');
-    
-    // Close all other FAQ items
-    document.querySelectorAll('.faq-item').forEach(item => {
-      item.classList.remove('active');
+// ─────────────────────────────────────────────────────────────────────────────
+// PAYMENT METHOD SELECTION
+// ─────────────────────────────────────────────────────────────────────────────
+methodBtns.forEach(btn => {
+  btn.addEventListener("click", () => {
+    methodBtns.forEach(b => {
+      b.classList.remove("border-primary", "border-2", "shadow-primary");
+      b.classList.add("border-white/10");
     });
-
-    // Toggle current one
-    if (!isOpen) {
-      faqItem.classList.add('active');
-    }
+    btn.classList.add("border-primary", "border-2", "shadow-primary");
+    btn.classList.remove("border-white/10");
+    selectedMethod = btn.dataset.method;
+    updatePayBtnLabel();
   });
 });
 
-/* ── Expose to Window (Module isolation) ── */
-window.openPayment = openPayment;
-window.closeModal = closeModal;
-window.selectMethod = selectMethod;
-window.initiatePayment = initiatePayment;
+// ─────────────────────────────────────────────────────────────────────────────
+// OPEN / CLOSE MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+window.openPayment = function(courseOrBtn) {
+  cancelActiveSession();  // ← kill any previous orphaned session first
+
+  let course;
+  if (courseOrBtn instanceof HTMLElement) {
+    const el = courseOrBtn.closest(".course-card") || courseOrBtn;
+    course = {
+      id: el.dataset.id || "1",
+      name: el.dataset.title || "Course",
+      price: parseFloat(el.dataset.price) || 0, // USD
+      file: el.dataset.file || "",
+      img: ""
+    };
+  } else {
+    course = courseOrBtn;
+  }
+
+  // Save course data to localStorage for persistence
+  localStorage.setItem('courseId', course.id);
+  localStorage.setItem('courseTitle', course.name);
+  localStorage.setItem('coursePriceUsd', course.price);
+  localStorage.setItem('courseFile', course.file);
+  localStorage.setItem('selectedCurrency', currentCurrency);
+
+  // Navigate to checkout.html
+  const url = `checkout.html?id=${encodeURIComponent(course.id)}&title=${encodeURIComponent(course.name)}&priceUsd=${encodeURIComponent(course.price)}&currency=${encodeURIComponent(currentCurrency)}&file=${encodeURIComponent(course.file)}`;
+  console.log("Redirecting to:", url);
+  window.location.href = url;
+}
+
+function closeModal() {
+  cancelActiveSession();     // ← kill any live session when user closes
+  stopCountdown();
+
+  payModal.classList.add("hidden");
+  payModal.classList.remove("flex");
+  document.body.style.overflow = "";
+  activeCourse = null;
+}
+
+// Wire up close triggers
+if (closeBtn) closeBtn.addEventListener("click", closeModal);
+if (modalBackdrop) modalBackdrop.addEventListener("click", closeModal);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STEP NAVIGATION
+// ─────────────────────────────────────────────────────────────────────────────
+function showStep(n) {
+  [step1, step2, step3, step4].forEach((el, i) => {
+    if (!el) return;
+    el.classList.toggle("hidden", i + 1 !== n);
+  });
+  // Update step indicator chips
+  document.querySelectorAll("[data-step-indicator]").forEach(chip => {
+    const num = parseInt(chip.dataset.stepIndicator);
+    chip.classList.toggle("opacity-100", num === n);
+    chip.classList.toggle("opacity-40", num !== n);
+    chip.classList.toggle("text-secondary", num === n);
+    chip.classList.toggle("border-secondary", num === n);
+    chip.classList.toggle("text-on-surface-variant", num !== n);
+    chip.classList.toggle("border-white/20", num !== n);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COUNTDOWN  (59 seconds — SVG ring + numeric display)
+// ─────────────────────────────────────────────────────────────────────────────
+const COUNTDOWN_TOTAL = 59;
+const ARC_CIRCUMFERENCE = 175.93;  // 2π × r=28
+
+function startCountdown(onExpire) {
+  stopCountdown(); // clear any existing timer first
+
+  let remaining = COUNTDOWN_TOTAL;
+
+  function renderCountdown() {
+    if (!countdownNum || !countdownArc || !countdownWrap) return;
+
+    countdownWrap.classList.remove("hidden");
+    countdownNum.textContent = remaining;
+
+    const offset = ARC_CIRCUMFERENCE * (1 - remaining / COUNTDOWN_TOTAL);
+    countdownArc.style.strokeDashoffset = offset;
+
+    // Turn red for the last 15 seconds
+    const urgent = remaining <= 15;
+    countdownArc.classList.toggle("stroke-error", urgent);
+    countdownArc.classList.toggle("stroke-primary-container", !urgent);
+    countdownNum.classList.toggle("text-error", urgent);
+    countdownNum.classList.toggle("text-white", !urgent);
+  }
+
+  renderCountdown();
+
+  countdownTimer = setInterval(() => {
+    remaining--;
+    renderCountdown();
+
+    if (remaining <= 0) {
+      stopCountdown();
+      onExpire?.();
+    }
+  }, 1000);
+}
+
+function stopCountdown() {
+  if (countdownTimer) {
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+  }
+  if (countdownWrap) countdownWrap.classList.add("hidden");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CANCEL ACTIVE SESSION
+// Called before starting a new payment, on modal close, and on retry.
+// This is the single choke-point that prevents STK push storms.
+// ─────────────────────────────────────────────────────────────────────────────
+function cancelActiveSession() {
+  if (activeSession) {
+    activeSession.cancel();
+    activeSession = null;
+  }
+  stopCountdown();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INITIATE PAYMENT  (called by Pay button click)
+// ─────────────────────────────────────────────────────────────────────────────
+async function initiatePayment() {
+  // Guard: if a session is already live, do nothing — no second STK push
+  if (activeSession) return;
+
+  const phone = phoneInput?.value?.trim();
+  if (!phone) {
+    alert("Please enter your mobile money number.");
+    return;
+  }
+  if (!activeCourse) return;
+
+  // Build the local-currency price for the backend
+  // (backend expects ZMW; adjust if your backend normalises differently)
+  const { rate } = RATES[currentCurrency];
+  const localPrice = Math.round(activeCourse.price * rate);
+
+  // Create a new session — this is the AbortController wrapper
+  cancelActiveSession();             // ensure no orphan from a previous attempt
+  activeSession = new PaymentSession();
+  const session = activeSession;     // local ref for callbacks
+
+  showStep(2);   // → Processing screen
+
+  await runPaymentFlow(
+    {
+      id: activeCourse.id,
+      name: activeCourse.name,
+      price: localPrice,
+      operator: selectedMethod === "airtel" ? "airtel-zm" : "mtn-zm",
+    },
+    phone,
+    {
+      // STK push sent — start the 59-second countdown
+      onStkSent: () => {
+        startCountdown(() => {
+          // Countdown expired → abort and send user back to Step 1
+          cancelActiveSession();
+          const msgEl = document.getElementById("step2StatusText");
+          if (msgEl) msgEl.textContent = "Session timed out. Please try again.";
+          setTimeout(() => showStep(1), 2000);
+        });
+      },
+
+      onStatusChange: (status) => {
+        const msgEl = document.getElementById("step2StatusText");
+        if (msgEl) {
+          msgEl.textContent =
+            status === "pending" ? "Waiting for your PIN…" :
+              status === "pay-offline" ? "Complete payment on your phone…" :
+                `Status: ${status}`;
+        }
+      },
+
+      onSuccess: ({ reference }) => {
+        stopCountdown();         // ← always stop countdown on terminal event
+        activeSession = null;
+
+        // Populate step 3
+        const refEl = document.getElementById("successReference");
+        if (refEl) refEl.textContent = reference || "—";
+
+        const dateEl = document.getElementById("successDate");
+        if (dateEl) dateEl.textContent = new Date().toLocaleDateString("en-GB", {
+          day: "numeric", month: "long", year: "numeric"
+        });
+
+        if (downloadLink && activeCourse?.file) {
+          downloadLink.href = activeCourse.file;
+          downloadLink.setAttribute("download", "");
+        }
+
+        showStep(3);
+      },
+
+      onCancelled: () => {
+        stopCountdown();         // ← always stop countdown on terminal event
+        activeSession = null;
+        showStep(1);
+      },
+
+      onError: (errMsg) => {
+        stopCountdown();         // ← always stop countdown on terminal event
+        activeSession = null;
+
+        if (failMsg) failMsg.textContent = errMsg || "Payment was not completed. Please try again.";
+        showStep(4);
+      },
+    },
+    session   // pass session so runPaymentFlow can check session.signal
+  );
+}
+
+if (payBtn) payBtn.addEventListener("click", initiatePayment);
+
+// Retry from failure screen → back to Step 1
+if (retryBtn) {
+  retryBtn.addEventListener("click", () => {
+    cancelActiveSession();
+    showStep(1);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// "GET IT NOW" BUTTONS — product cards on main page
+// ─────────────────────────────────────────────────────────────────────────────
+document.querySelectorAll("[data-course]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const el = btn.closest("[data-course-id]") || btn;
+    openPayment({
+      id: el.dataset.courseId || btn.dataset.courseId,
+      name: el.dataset.courseName || btn.dataset.courseName,
+      price: parseFloat(el.dataset.coursePrice || btn.dataset.coursePrice), // USD
+      file: el.dataset.courseFile || btn.dataset.courseFile,
+      img: el.dataset.courseImg || btn.dataset.courseImg || "",
+    });
+  });
+});

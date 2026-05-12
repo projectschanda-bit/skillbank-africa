@@ -57,17 +57,14 @@ lencoClient.interceptors.response.use(
  */
 async function initiateMobileMoneyCollection(params) {
   const payload = {
-    amount: String(params.amount),
-    currency: "ZMW",
+    amount: Number(params.amount),
     reference: params.reference,
-    mobileMoneyDetails: {
-      phone: params.phone,
-      operator: params.operator,    // "mtn-zm" or "airtel-zm"
-      country: "ZM",
-    },
+    phone: params.phone,
+    operator: params.operator, // e.g., "airtel", "mtn"
+    country: (params.country || "zm").toLowerCase(),
     callbackUrl: params.webhookUrl || process.env.LENCO_WEBHOOK_URL,
     description: params.description || "SkillBank Africa – course purchase",
-    bearer: "merchant",             // merchant absorbs the fee; change to "customer" to pass fee on
+    bearer: "merchant", // merchant absorbs the fee; change to "customer" to pass fee on
   };
 
   const { data } = await lencoClient.post("/collections/mobile-money", payload);

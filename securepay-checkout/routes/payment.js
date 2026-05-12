@@ -20,86 +20,149 @@ function generateReference() {
 }
 
 /**
- * Normalise a Zambian phone number to international format (260XXXXXXXXX).
- * Accepts: 260971234567 | +260971234567 | 0971234567
+ * Normalise a phone number to international format (260...) for Zambia.
+ * Lenco expects 260976551763 when country is ZM.
+ * @param {string} raw - Raw input from frontend
+ * @param {string} country - "ZM" or "NG"
  */
-function normalisePhone(raw) {
-  const digits = String(raw).replace(/\D/g, "");
-  if (digits.startsWith("260") && digits.length === 12) return digits;
-  if (digits.startsWith("0") && digits.length === 10) return "260" + digits.slice(1);
-  if (digits.length === 9) return "260" + digits;
-  return digits; // return as-is; Lenco will validate
+function normalisePhone(raw, country = "ZM") {
+  if (!raw) return "";
+
+  // 1. Remove all non-digit characters
+  let digits = String(raw).replace(/\D/g, "");
+
+  if (country === "ZM") {
+    // Strip 00260, 260, or +260
+    if (digits.startsWith("00260")) {
+      digits = digits.slice(5);
+    } else if (digits.startsWith("260")) {
+      digits = digits.slice(3);
+    }
+
+    // Now we should have the 9-digit local number (e.g. 96... or 97...)
+    // If user provided a leading zero (e.g. 096...), strip it
+    if (digits.length === 10 && digits.startsWith("0")) {
+      digits = digits.slice(1);
+    }
+
+    // Final check for ZM: should be 9 digits now. Prepend 260.
+    if (digits.length === 9) {
+      return "260" + digits;
+    }
+  } else if (country === "NG") {
+    // Nigeria logic (international 234...)
+    if (digits.startsWith("0") && digits.length === 11) {
+      digits = "234" + digits.slice(1);
+    } else if (!digits.startsWith("234") && digits.length === 10) {
+      digits = "234" + digits;
+    }
+    return digits;
+  }
+
+  return digits;
 }
 
 /**
- * Detect mobile money operator from the phone prefix.
- * MTN-ZM: 096, 076  |  Airtel-ZM: 097, 077
+ * Returns the operator string expected by Lenco (mtn, airtel, zamtel).
  */
-function detectOperator(normalisedPhone) {
-  const prefix = normalisedPhone.slice(3, 5); // e.g. "96", "97"
-  const mtnPrefixes = ["96", "76"];
-  return mtnPrefixes.includes(prefix) ? "mtn-zm" : "airtel-zm";
+function getFinalOperator(inputOperator, normPhone, country = "ZM") {
+  const op = (inputOperator || "").toLowerCase();
+
+  if (country === "ZM") {
+    if (op.includes("mtn")) return "mtn";
+    if (op.includes("airtel")) return "airtel";
+    if (op.includes("zamtel")) return "zamtel";
+
+    // Auto-detect from normalized phone (096..., 097..., 095...)
+    const localPart = normPhone.startsWith("0") ? normPhone.slice(1) : normPhone;
+    if (localPart.startsWith("96") || localPart.startsWith("76")) return "mtn";
+    if (localPart.startsWith("97") || localPart.startsWith("77")) return "airtel";
+    if (localPart.startsWith("95") || localPart.startsWith("75")) return "zamtel";
+
+    return "airtel"; // Default fallback
+  }
+
+  if (country === "NG") {
+    if (op.includes("mtn")) return "mtn";
+    if (op.includes("airtel")) return "airtel";
+    if (op.includes("glo")) return "glo";
+    if (op.includes("9mobile")) return "9mobile";
+    return "mtn";
+  }
+
+  return op;
 }
 
 // ── POST /api/payment/initiate ─────────────────────────────────────────────────
 /**
- * Body: { courseId, courseName, amount, phone, operator? }
- *
- * 1. Creates a Firestore purchase record (status: pending).
- * 2. Calls Lenco → mobile money STK push.
- * 3. Updates the record with the Lenco collection id.
- * 4. Returns { reference, collectionId, status, requiresOtp }.
+ * Body: { courseId, courseName, amount, phone, operator?, method?, currency? }
  */
 router.post("/initiate", async (req, res) => {
   try {
-    const { courseId, courseName, amount, phone, operator } = req.body;
+    const { courseId, courseName, amount, phone, operator, method, currency: reqCurrency } = req.body;
+    const finalCurrency = (reqCurrency || "ZMW").toUpperCase();
+    const country = finalCurrency === "NGN" ? "NG" : "ZM";
 
-    // ── Validation ──────────────────────────────────────────────
+    // 1. Validation
     if (!courseId || !courseName) {
       return res.status(400).json({ success: false, message: "courseId and courseName are required." });
     }
     if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
       return res.status(400).json({ success: false, message: "A valid amount is required." });
     }
-    if (!phone) {
-      return res.status(400).json({ success: false, message: "A phone number is required." });
+
+    // Normalize phone to international format (e.g. 26097...)
+    const normPhone = normalisePhone(phone, country);
+    if (!normPhone && (method !== 'card' && operator !== 'card')) {
+      return res.status(400).json({ success: false, message: "A valid phone number is required for mobile money." });
     }
 
-    const normPhone = normalisePhone(phone);
-    const resolvedOperator = operator || detectOperator(normPhone);
+    // Determine correct operator string for Lenco (no suffixes like -zm)
+    const finalOperator = getFinalOperator(operator || method, normPhone, country);
     const reference = generateReference();
 
-    // ── Persist initial purchase record ─────────────────────────
+    // MANDATORY LOGGING FOR VERIFICATION
+    console.log(`[PAYMENT] Initiating ${finalCurrency} payment. Phone: ${normPhone}, Operator: ${finalOperator}`);
+
+    // 2. Persist initial purchase record
     await firebase.createPurchaseRecord({
       reference,
       courseId,
       courseName,
       amount: String(amount),
-      currency: "ZMW",
+      currency: finalCurrency,
       phone: normPhone,
-      operator: resolvedOperator,
+      operator: finalOperator,
       status: "pending",
       lencoCollectionId: null,
+      createdAt: new Date().toISOString(),
     });
 
-    // ── Call Lenco STK Push ─────────────────────────────────────
+    // 3. Call Lenco STK Push
     const lencoResponse = await lenco.initiateMobileMoneyCollection({
       amount,
+      currency: finalCurrency,
+      country: country,
       phone: normPhone,
-      operator: resolvedOperator,
+      operator: finalOperator,
       reference,
       description: `SkillBank Africa – ${courseName}`,
     });
 
+    if (!lencoResponse || !lencoResponse.success) {
+      throw new Error(lencoResponse?.message || "Lenco initiation failed");
+    }
+
     const collection = lencoResponse.data;
     const requiresOtp = collection.status === "otp-required";
 
-    // ── Update Firestore with Lenco collection id ────────────────
+    // 4. Update Firestore with Lenco collection id
     await firebase.updatePurchaseStatus(reference, {
       lencoCollectionId: collection.id,
       status: collection.status,
     });
 
+    // 5. Respond to frontend
     return res.json({
       success: true,
       message: requiresOtp
@@ -107,26 +170,29 @@ router.post("/initiate", async (req, res) => {
         : "STK push sent. Please authorise the payment on your phone.",
       reference,
       collectionId: collection.id,
-      status: collection.status,      // "pending" | "pay-offline" | "otp-required"
+      status: collection.status,
       requiresOtp,
     });
+
   } catch (err) {
     console.error("❌ /payment/initiate error:", err.message, err.lencoData || "");
+
+    const errorDetail = err.lencoData || {};
+    let friendlyMessage = err.message || "Failed to initiate payment.";
+
+    if (errorDetail.message === "Invalid phone") {
+      friendlyMessage = "The phone number format is invalid. Please check and try again.";
+    }
+
     return res.status(err.status || 500).json({
       success: false,
-      message: err.message || "Failed to initiate payment.",
-      detail: err.lencoData || null,
+      message: friendlyMessage,
+      detail: errorDetail,
     });
   }
 });
 
 // ── POST /api/payment/submit-otp ───────────────────────────────────────────────
-/**
- * Body: { reference, collectionId, otp }
- *
- * Called only when the initiation returned requiresOtp: true.
- * After a successful OTP, Lenco triggers the STK push → customer authorises.
- */
 router.post("/submit-otp", async (req, res) => {
   try {
     const { reference, collectionId, otp } = req.body;
@@ -156,23 +222,16 @@ router.post("/submit-otp", async (req, res) => {
 });
 
 // ── GET /api/payment/status/:reference ────────────────────────────────────────
-/**
- * The frontend polls this every few seconds after initiating payment.
- * Returns the latest status from Firestore (kept in sync by the webhook).
- */
 router.get("/status/:reference", async (req, res) => {
   try {
     const { reference } = req.params;
 
-    // Try Firestore first (fast, free)
     const purchase = await firebase.getPurchase(reference);
     if (!purchase) {
       return res.status(404).json({ success: false, message: "Transaction not found." });
     }
 
-    // If still pending/pay-offline, also requery Lenco as a fallback
-    // (handles the case where the webhook was missed)
-    if (["pending", "pay-offline"].includes(purchase.status) && purchase.lencoCollectionId) {
+    if (["pending", "pay-offline", "otp-required"].includes(purchase.status) && purchase.lencoCollectionId) {
       try {
         const lencoResponse = await lenco.getCollectionStatus(reference);
         const latestStatus = lencoResponse.data?.status;
@@ -181,14 +240,14 @@ router.get("/status/:reference", async (req, res) => {
           purchase.status = latestStatus;
         }
       } catch (_) {
-        // Lenco requery failed – return Firestore value anyway
+        // Fallback
       }
     }
 
     return res.json({
       success: true,
       reference: purchase.reference,
-      status: purchase.status,          // "pending" | "pay-offline" | "successful" | "failed"
+      status: purchase.status,
       courseName: purchase.courseName,
       amount: purchase.amount,
       currency: purchase.currency,

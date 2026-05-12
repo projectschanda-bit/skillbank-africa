@@ -1,142 +1,171 @@
-// payment-api.js
-// Drop this file into your skillbank-africa/ frontend folder.
-// Import it in script.js and replace the old setTimeout mock.
-//
-// Usage:
-//   import { initiatePayment, pollPaymentStatus } from './payment-api.js';
+// payment-api.js — Cancellable Session Version
+// Place in: skillbank-africa/ (same level as index.html)
+// This is the CORRECT version. Do NOT replace with the old polling-only version.
 
-const BACKEND_URL = "http://localhost:5000"; // change to your live server URL in production
+const BACKEND_URL = "http://localhost:5000"; // swap to your live URL in production
 
-// ── Initiate STK Push ──────────────────────────────────────────────────────────
-/**
- * @param {object} params
- * @param {string} params.courseId
- * @param {string} params.courseName
- * @param {number} params.amount        - in ZMW
- * @param {string} params.phone         - customer's mobile number
- * @param {string} [params.operator]    - "mtn-zm" | "airtel-zm" (auto-detected if omitted)
- *
- * @returns {{ reference, collectionId, status, requiresOtp, message }}
- */
-export async function initiatePayment(params) {
+// ─────────────────────────────────────────────────────────────────────────────
+// PaymentSession
+// Wraps an AbortController so every fetch and the poll loop can be killed
+// instantly from script.js via cancelActiveSession().
+// ─────────────────────────────────────────────────────────────────────────────
+export class PaymentSession {
+  constructor() {
+    this._ctrl = new AbortController();
+    this.signal = this._ctrl.signal;
+    this.cancelled = false;
+  }
+  cancel() {
+    this.cancelled = true;
+    this._ctrl.abort();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// initiatePayment
+// POST /api/payment/initiate — fires the STK push to the customer's phone.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function initiatePayment(params, signal) {
   const res = await fetch(`${BACKEND_URL}/api/payment/initiate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(params),
+    signal,
   });
   const data = await res.json();
-  if (!res.ok || !data.success) throw new Error(data.message || "Payment initiation failed.");
-  return data;
+  if (!res.ok || !data.success)
+    throw new Error(data.message || "Payment initiation failed.");
+  return data; // { reference, collectionId, requiresOtp, ... }
 }
 
-// ── Submit OTP (if required) ───────────────────────────────────────────────────
 /**
- * @param {{ reference, collectionId, otp }} params
+ * fetchPaymentStatus
+ * GET /api/payment/status/:reference
+ * Returns the current status of a transaction.
  */
-export async function submitPaymentOtp(params) {
-  const res = await fetch(`${BACKEND_URL}/api/payment/submit-otp`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-  });
+export async function fetchPaymentStatus(reference, signal) {
+  const res = await fetch(`${BACKEND_URL}/api/payment/status/${reference}`, { signal });
   const data = await res.json();
-  if (!res.ok || !data.success) throw new Error(data.message || "OTP submission failed.");
-  return data;
+  if (!res.ok || !data.success)
+    throw new Error(data.message || "Status check failed.");
+  return data; // { status, reference, ... }
 }
 
-// ── Poll payment status ────────────────────────────────────────────────────────
-/**
- * Polls the backend every `interval` ms until the payment is resolved.
- * Calls onStatusChange(status) on every update.
- *
- * @param {string}   reference
- * @param {Function} onStatusChange  - called with (status: string)
- * @param {number}   [timeout=120000] - max wait time in ms (default: 2 min)
- * @param {number}   [interval=3000]  - polling interval in ms
- * @returns {Promise<string>} final status ("successful" | "failed")
- */
-export async function pollPaymentStatus(reference, onStatusChange, timeout = 120_000, interval = 3_000) {
-  const deadline = Date.now() + timeout;
+// ─────────────────────────────────────────────────────────────────────────────
+// pollPaymentStatus
+// Recursive setTimeout (NOT setInterval) — stops itself on any terminal status.
+// Accepts the session's AbortSignal so Cancel / modal-close kills it instantly.
+// ─────────────────────────────────────────────────────────────────────────────
+export function pollPaymentStatus(reference, callbacks, signal) {
+  const { onStatusChange, onSuccess, onError } = callbacks;
 
-  return new Promise((resolve, reject) => {
-    const tick = async () => {
-      try {
-        const res = await fetch(`${BACKEND_URL}/api/payment/status/${reference}`);
-        const data = await res.json();
+  const FIRST_DELAY = 8_000;  // give the STK prompt time to appear on phone
+  const POLL_INTERVAL = 6_000;  // check every 6 s
+  const BACKOFF_429 = 15_000; // back off on rate-limit
 
-        if (!data.success) {
-          reject(new Error(data.message || "Status check failed."));
-          return;
-        }
+  const TERMINAL = new Set([
+    "successful", "failed", "cancelled",
+    "rejected", "timeout", "expired",
+  ]);
 
-        const { status } = data;
-        onStatusChange(status);
+  const poll = async () => {
+    if (signal?.aborted) return; // session was cancelled — stop silently
 
-        if (status === "successful") {
-          resolve(status);
-          return;
-        }
-        if (status === "failed") {
-          reject(new Error("Payment was not completed. Please try again."));
-          return;
-        }
+    try {
+      const res = await fetch(
+        `${BACKEND_URL}/api/payment/status/${reference}`,
+        { signal }
+      );
 
-        // Still pending or pay-offline → keep polling
-        if (Date.now() > deadline) {
-          reject(new Error("Payment timed out. Please check your phone and try again."));
-          return;
-        }
+      if (signal?.aborted) return;
 
-        setTimeout(tick, interval);
-      } catch (err) {
-        reject(err);
+      // Rate-limited — back off and retry
+      if (res.status === 429) {
+        setTimeout(poll, BACKOFF_429);
+        return;
       }
-    };
 
-    setTimeout(tick, interval); // first check after one interval
-  });
+      const data = await res.json();
+      if (!data.success) {
+        onError?.(new Error(data.message || "Status check failed."));
+        return;
+      }
+
+      const { status } = data;
+      onStatusChange?.(status);
+
+      if (status === "successful") {
+        onSuccess?.({ reference });
+        return; // ← poll loop ends here on success
+      }
+
+      if (TERMINAL.has(status)) {
+        const msg =
+          status === "failed" ? "Payment was declined. Please try again." :
+            status === "cancelled" ? "Payment was cancelled." :
+              status === "rejected" ? "Wrong PIN entered. Please try again." :
+                "Payment session expired. Please try again.";
+        onError?.(new Error(msg));
+        return; // ← poll loop ends here on any terminal failure
+      }
+
+      // Still pending — keep polling
+      setTimeout(poll, POLL_INTERVAL);
+
+    } catch (err) {
+      if (err.name === "AbortError") return; // clean cancel — do nothing
+      onError?.(err);
+    }
+  };
+
+  // First check is delayed so the phone PIN prompt appears before we query
+  setTimeout(poll, FIRST_DELAY);
 }
 
-// ── Full payment flow (convenience wrapper) ────────────────────────────────────
-/**
- * Manages the entire payment lifecycle.
- *
- * @param {object} courseData       - { id, name, price }
- * @param {string} phone            - customer phone
- * @param {object} uiCallbacks
- * @param {Function} uiCallbacks.onOtpRequired      - show OTP input to user
- * @param {Function} uiCallbacks.onStkSent          - show "check your phone" message
- * @param {Function} uiCallbacks.onStatusChange     - update progress indicator
- * @param {Function} uiCallbacks.onSuccess          - unlock download
- * @param {Function} uiCallbacks.onError            - show error message
- */
-export async function runPaymentFlow(courseData, phone, { onOtpRequired, onStkSent, onStatusChange, onSuccess, onError }) {
+// ─────────────────────────────────────────────────────────────────────────────
+// runPaymentFlow
+// Convenience wrapper — manages the full lifecycle for script.js.
+// Pass the active PaymentSession so the caller can abort at any time.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function runPaymentFlow(courseData, phone, callbacks, session) {
+  const {
+    onStkSent,
+    onStatusChange,
+    onSuccess,
+    onCancelled,
+    onError,
+  } = callbacks;
+
   try {
-    const initResult = await initiatePayment({
-      courseId: courseData.id,
-      courseName: courseData.name,
-      amount: courseData.price,
-      phone,
-    });
+    const initResult = await initiatePayment(
+      {
+        courseId: courseData.id,
+        courseName: courseData.name,
+        amount: courseData.price,
+        phone,
+      },
+      session.signal
+    );
 
-    const { reference, collectionId, requiresOtp } = initResult;
+    if (session.cancelled) return;
 
-    // ── OTP step (some MTN accounts) ────────────────────────────
-    if (requiresOtp) {
-      const otp = await onOtpRequired(); // should return a Promise that resolves with the OTP string
-      await submitPaymentOtp({ reference, collectionId, otp });
-    }
+    const { reference } = initResult;
 
-    // ── Wait for customer to tap "Pay" on their phone ────────────
-    onStkSent?.("Please open your phone and enter your mobile money PIN to complete payment.");
+    // Notify UI that STK push was sent — script.js calls startCountdown() here
+    onStkSent?.("Please open your phone and enter your mobile money PIN.");
 
-    // ── Poll until resolved ─────────────────────────────────────
-    await pollPaymentStatus(reference, (status) => {
-      onStatusChange?.(status);
-    });
+    // Start non-blocking poll — session.signal kills it if modal closes
+    pollPaymentStatus(
+      reference,
+      { onStatusChange, onSuccess, onError },
+      session.signal
+    );
 
-    onSuccess?.({ reference, courseData });
   } catch (err) {
+    if (err.name === "AbortError" || session.cancelled) {
+      onCancelled?.();
+      return;
+    }
     onError?.(err.message || "An unexpected error occurred.");
   }
 }

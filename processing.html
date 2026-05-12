@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>SkillBank Africa - Checkout Processing</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com" rel="preconnect"/>
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&amp;family=Bricolage+Grotesque:opsz,wght@12..96,400;600&amp;family=Syne:wght@700;800&amp;display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+    <script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-tertiary-fixed": "#00210c",
+                      "tertiary-container": "#00a657",
+                      "primary-container": "#ff4992",
+                      "surface": "#141027",
+                      "primary-fixed": "#ffd9e1",
+                      "primary": "#ffb1c6",
+                      "on-error-container": "#ffdad6",
+                      "on-surface": "#e7deff",
+                      "surface-variant": "#36314b",
+                      "surface-container-low": "#1d1830",
+                      "outline": "#aa8890",
+                      "error": "#ffb4ab",
+                      "on-secondary-container": "#a7b4ff",
+                      "inverse-on-surface": "#322d46",
+                      "error-container": "#93000a",
+                      "on-secondary": "#00218d",
+                      "surface-tint": "#ffb1c6",
+                      "on-tertiary": "#00391a",
+                      "on-surface-variant": "#e3bdc6",
+                      "surface-container-lowest": "#0f0a22",
+                      "on-tertiary-container": "#003116",
+                      "background": "#141027",
+                      "surface-dim": "#141027",
+                      "secondary-container": "#0634c7",
+                      "on-primary": "#650031",
+                      "tertiary-fixed-dim": "#43e182",
+                      "tertiary": "#43e182",
+                      "on-primary-fixed-variant": "#8e0048",
+                      "on-primary-fixed": "#3f001c",
+                      "surface-container-high": "#2b273f",
+                      "secondary": "#bac3ff",
+                      "surface-container-highest": "#36314b",
+                      "secondary-fixed": "#dee1ff",
+                      "tertiary-fixed": "#66fe9c",
+                      "surface-container": "#211c34",
+                      "on-tertiary-fixed-variant": "#005228",
+                      "inverse-primary": "#ba0060",
+                      "surface-bright": "#3b364f",
+                      "primary-fixed-dim": "#ffb1c6",
+                      "on-secondary-fixed-variant": "#0031c4",
+                      "secondary-fixed-dim": "#bac3ff",
+                      "on-error": "#690005",
+                      "inverse-surface": "#e7deff",
+                      "outline-variant": "#5a3f47",
+                      "on-secondary-fixed": "#001159",
+                      "on-background": "#e7deff",
+                      "on-primary-container": "#59002a"
+              },
+              "borderRadius": {
+                      "DEFAULT": "1rem",
+                      "lg": "2rem",
+                      "xl": "3rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "gutter": "24px",
+                      "unit": "8px",
+                      "section-gap": "64px",
+                      "container-padding": "32px",
+                      "max-width": "1200px"
+              },
+              "fontFamily": {
+                      "sans": ["Inter", "sans-serif"],
+                      "price-xl": ["Syne"],
+                      "label-sm": ["Bricolage Grotesque"],
+                      "headline-md": ["Syne"],
+                      "body-md": ["Bricolage Grotesque"],
+                      "display-lg-mobile": ["Syne"],
+                      "body-lg": ["Bricolage Grotesque"],
+                      "display-lg": ["Syne"]
+              },
+              "fontSize": {
+                      "price-xl": ["36px", { "lineHeight": "1", "letterSpacing": "-0.04em", "fontWeight": "800" }],
+                      "label-sm": ["12px", { "lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                      "headline-md": ["24px", { "lineHeight": "1.2", "fontWeight": "700" }],
+                      "body-md": ["16px", { "lineHeight": "1.5", "fontWeight": "400" }],
+                      "display-lg-mobile": ["32px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "800" }],
+                      "body-lg": ["18px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                      "display-lg": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "800" }]
+              }
+            },
+          },
+        }
+    </script>
+    <style>
+        .material-symbols-outlined {
+          font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        @keyframes spin-slow {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        .animate-spin-slow {
+          animation: spin-slow 2s linear infinite;
+        }
+    </style>
+</head>
+<body class="text-on-surface font-sans antialiased min-h-screen flex flex-col relative overflow-x-hidden bg-[#08060f]">
+    <div class="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+        <div class="absolute top-[-20%] left-[-10%] w-[60vw] h-[60vw] rounded-full bg-[#3b364f]/30 blur-[150px] opacity-60 mix-blend-screen"></div>
+        <div class="absolute bottom-[-10%] right-[-10%] w-[50vw] h-[50vw] rounded-full bg-[#f72585]/15 blur-[120px] opacity-50 mix-blend-screen"></div>
+    </div>
+    <main class="flex-grow relative z-10 w-full max-w-lg mx-auto px-container-padding flex items-center justify-center min-h-screen">
+        <div class="w-full relative">
+            <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-[80%] bg-primary/5 blur-[100px] rounded-full pointer-events-none z-0"></div>
+            <div class="relative z-10 bg-white/[0.05] backdrop-blur-[24px] border border-white/10 rounded-2xl p-10 flex flex-col items-center justify-center text-center shadow-2xl shadow-black/50 min-h-[500px]">
+                <div class="absolute top-0 left-0 w-full h-1.5 bg-white/5 overflow-hidden rounded-t-2xl">
+                    <div id="progressBar" class="h-full w-0 bg-gradient-to-r from-primary to-secondary shadow-[0_0_8px_rgba(255,177,198,0.5)] transition-all duration-1000"></div>
+                </div>
+                <button onclick="window.history.back()" class="absolute top-6 right-6 p-2 rounded-full hover:bg-white/5 transition-colors text-white/40 hover:text-white">
+                    <span class="material-symbols-outlined text-xl">close</span>
+                </button>
+                <div class="absolute w-40 h-40 bg-primary/20 blur-[60px] rounded-full pointer-events-none"></div>
+                <div class="flex flex-col items-center justify-center relative z-10 w-full">
+                    <div class="w-[64px] h-[64px] relative flex items-center justify-center mb-10">
+                        <svg class="w-full h-full text-primary-container drop-shadow-[0_0_12px_rgba(255,73,146,0.6)] animate-spin-slow" fill="none" viewbox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="50" cy="50" r="45" stroke="currentColor" stroke-linecap="round" stroke-opacity="0.15" stroke-width="8"></circle>
+                            <circle cx="50" cy="50" r="45" stroke="currentColor" stroke-dasharray="80 200" stroke-dashoffset="-20" stroke-linecap="round" stroke-width="8"></circle>
+                        </svg>
+                    </div>
+                    <h2 id="statusTitle" class="text-2xl font-semibold tracking-tight text-white mb-3">Waiting for your MoMo PIN…</h2>
+                    <p id="statusDesc" class="text-[15px] font-normal leading-relaxed text-white/60 mb-10 max-w-sm">
+                        Please check your mobile device and authorize the payment. This window will automatically update.
+                    </p>
+                    <div class="flex flex-col items-center gap-2 mb-12">
+                        <span class="text-[11px] font-medium text-white/50 uppercase tracking-[0.15em]">Time Remaining</span>
+                        <div id="timer" class="text-4xl font-bold tracking-tight text-white">01:00</div>
+                    </div>
+                    <div class="flex items-center gap-3 bg-white/5 border border-white/10 px-6 py-3 rounded-xl">
+                        <div class="flex items-center justify-center w-8 h-8 rounded-full bg-error/10">
+                            <span class="material-symbols-outlined text-[18px] text-error">warning</span>
+                        </div>
+                        <div class="text-left">
+                            <p class="text-[13px] font-semibold text-white">Do not close this window</p>
+                            <p class="text-[11px] text-white/40">The transaction is being processed securely</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script type="module">
+        import { fetchPaymentStatus } from './payment-api.js';
+
+        const params = new URLSearchParams(window.location.search);
+        const reference = params.get('ref') || localStorage.getItem('paymentRef');
+        const file = params.get('file') || localStorage.getItem('paymentFile') || 'course-material.pdf';
+        const operator = localStorage.getItem('selectedOperator') || 'mtn';
+
+        // Dynamic UI based on operator
+        const statusTitle = document.getElementById('statusTitle');
+        const statusDesc = document.getElementById('statusDesc');
+        
+        if (operator === 'airtel') {
+            statusTitle.textContent = 'Waiting for your Airtel Money PIN…';
+            statusDesc.textContent = 'Please check your Airtel phone for the prompt and enter your PIN to complete the payment.';
+            // Optionally change colors to Airtel Red if desired
+            document.querySelector('.text-primary-container')?.classList.replace('text-primary-container', 'text-error');
+            document.getElementById('progressBar')?.classList.replace('from-primary', 'from-error');
+        } else if (operator === 'mtn') {
+            statusTitle.textContent = 'Waiting for your MTN MoMo PIN…';
+            statusDesc.textContent = 'Please check your MTN phone for the prompt and enter your MoMo PIN to complete the payment.';
+        }
+
+        if (!reference) {
+            window.location.href = 'index.html';
+        }
+
+        let timeLeft = 60;
+        const timerEl = document.getElementById('timer');
+        const progressBar = document.getElementById('progressBar');
+
+        const countdown = setInterval(() => {
+            timeLeft--;
+            const mins = Math.floor(timeLeft / 60);
+            const secs = timeLeft % 60;
+            timerEl.textContent = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            progressBar.style.width = `${((60 - timeLeft) / 60) * 100}%`;
+
+            if (timeLeft <= 0) {
+                clearInterval(countdown);
+                window.location.href = 'failed.html';
+            }
+        }, 1000);
+
+        async function checkStatus() {
+            try {
+                const result = await fetchPaymentStatus(reference);
+                console.log("Status update:", result.status);
+
+                const status = result.status.toLowerCase();
+
+                if (['successful', 'completed', 'success'].includes(status)) {
+                    clearInterval(countdown);
+                    window.location.href = 'success.html';
+                } else if (['failed', 'cancelled', 'rejected', 'timeout', 'expired'].includes(status)) {
+                    clearInterval(countdown);
+                    window.location.href = 'failed.html';
+                } else {
+                    // Still pending, poll again in 3 seconds
+                    setTimeout(checkStatus, 3000);
+                }
+            } catch (err) {
+                console.error("Status check failed:", err);
+                // Retry after a longer delay on error
+                setTimeout(checkStatus, 5000);
+            }
+        }
+
+        // Start polling
+        checkStatus();
+    </script>
+</body>
+</html>
