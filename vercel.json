@@ -1,14 +1,9 @@
 {
   "version": 2,
-  "functions": {
-    "securepay-checkout/server.js": {
-      "runtime": "@vercel/node"
-    }
-  },
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/securepay-checkout/server.js"
+      "destination": "/api/index.js"
     }
   ]
 }
