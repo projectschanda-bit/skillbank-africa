@@ -1,8 +1,8 @@
 // server.js
 // SkillBank Africa – Lenco payment gateway backend
 // ─────────────────────────────────────────────────
-// Start:   npm run dev   (development, with nodemon)
-//           npm start    (production)
+// Local dev:  npm run dev   (nodemon)
+// Production: exported as a Vercel serverless function via module.exports = app
 
 require("dotenv").config();
 
@@ -17,6 +17,8 @@ const webhookRoutes = require("./routes/webhook");
 const { initFirebase } = require("./services/firebase");
 
 // ── Validate required env vars ─────────────────────────────────────────────────
+// NOTE: We warn (not exit) so Vercel serverless cold-starts are not killed
+//       before the function can handle a request and return a proper error.
 const required = [
   "LENCO_SECRET_KEY",
   "LENCO_PUBLIC_KEY",
@@ -25,8 +27,7 @@ const required = [
 const missing = required.filter((k) => !process.env[k]);
 if (missing.length) {
   console.error(`\n❌  Missing environment variables: ${missing.join(", ")}`);
-  console.error("    Copy .env.example → .env and fill in the values.\n");
-  process.exit(1);
+  console.error("    Set them in Vercel Dashboard → Project Settings → Environment Variables.\n");
 }
 
 // ── Initialise Firebase ────────────────────────────────────────────────────────
@@ -34,23 +35,25 @@ try {
   initFirebase();
 } catch (err) {
   console.error("❌  Firebase init failed:", err.message);
-  process.exit(1);
+  // Do not exit — let Vercel surface the error via the request handler
 }
 
 // ── App setup ──────────────────────────────────────────────────────────────────
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Security header
-app.use(helmet());
+// Security header - Relaxed slightly for serverless routing
+app.use(helmet({
+  contentSecurityPolicy: false, // Prevents CSP from blocking same-origin API calls on some browsers
+}));
 
 // Request logging (concise in production, verbose in dev)
 app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 
-// CORS – allow requests from local development ports
+// CORS – allow requests from same origin and local dev
 app.use(
   cors({
-    origin: "*", // In production, this should be specific: e.g. "https://skillbankafrica.com"
+    origin: ["http://localhost:5500", /\.vercel\.app$/],
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
@@ -87,16 +90,22 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ success: false, message: "Internal server error." });
 });
 
-// ── Start ──────────────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`
+// ── Start (Local Dev only) ─────────────────────────────────────────────────────
+// require.main === module is true when run directly: `node server.js` or nodemon.
+// On Vercel, this file is imported as a module — app.listen() is never called.
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`
 ╔════════════════════════════════════════════════╗
 ║  SkillBank Africa – Checkout Backend           ║
 ║  Running on http://localhost:${PORT}             ║
 ║  Environment: ${(process.env.NODE_ENV || "development").padEnd(31)}║
 ║  Webhook URL: ${(process.env.LENCO_WEBHOOK_URL || "not set").slice(0, 32).padEnd(31)}║
 ╚════════════════════════════════════════════════╝
-  `);
-});
+    `);
+  });
+}
 
+// ── Vercel Serverless Export ───────────────────────────────────────────────────
+// Vercel imports this module and uses the exported app as the request handler.
 module.exports = app;

@@ -2,7 +2,12 @@
 // Place in: skillbank-africa/ (same level as index.html)
 // This is the CORRECT version. Do NOT replace with the old polling-only version.
 
-const BACKEND_URL = "http://localhost:5000"; // swap to your live URL in production
+// ── Backend Configuration ───────────────────────────────────────────────────
+// On Vercel, the frontend and backend share the same domain.
+const BACKEND_URL = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+  ? "http://localhost:5000"
+  : window.location.origin; 
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PaymentSession

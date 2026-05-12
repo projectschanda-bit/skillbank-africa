@@ -1,28 +1,53 @@
 // services/firebase.js
 // Initialises Firebase Admin SDK (server-side) once and exports shared instances.
+//
+// Credential resolution order:
+//   1. FIREBASE_SERVICE_ACCOUNT env var (stringified JSON) — used on Vercel / production
+//   2. Local firebase-service-account.json file            — used in local development
 
 const admin = require("firebase-admin");
 const path = require("path");
 const fs = require("fs");
 
 let db;
-let storage;
 
 function initFirebase() {
   if (admin.apps.length > 0) return; // already initialised
 
-  const serviceAccountPath = path.resolve(
-    process.env.FIREBASE_SERVICE_ACCOUNT_PATH || "./firebase-service-account.json"
-  );
+  let serviceAccount;
 
-  if (!fs.existsSync(serviceAccountPath)) {
-    throw new Error(
-      `Firebase service account file not found at: ${serviceAccountPath}\n` +
-        "Download it from Firebase Console → Project Settings → Service Accounts."
-    );
+  // ── Strategy 1: env var (Vercel / production) ───────────────────────────────
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    try {
+      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+      console.log("✅ Firebase: loaded credentials from FIREBASE_SERVICE_ACCOUNT env var");
+    } catch (err) {
+      throw new Error(
+        "FIREBASE_SERVICE_ACCOUNT env var is set but contains invalid JSON.\n" +
+        "Generate it with: node -e \"console.log(JSON.stringify(require('./firebase-service-account.json')))\""
+      );
+    }
   }
 
-  const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, "utf8"));
+  // ── Strategy 2: local JSON file (development fallback) ─────────────────────
+  if (!serviceAccount) {
+    const serviceAccountPath = path.resolve(
+      process.env.FIREBASE_SERVICE_ACCOUNT_PATH || "./firebase-service-account.json"
+    );
+
+    if (!fs.existsSync(serviceAccountPath)) {
+      throw new Error(
+        `Firebase credentials not found.\n` +
+        `  → In production: set the FIREBASE_SERVICE_ACCOUNT environment variable in Vercel.\n` +
+        `  → In development: download firebase-service-account.json from Firebase Console\n` +
+        `    (Project Settings → Service Accounts → Generate new private key)\n` +
+        `    and place it at: ${serviceAccountPath}`
+      );
+    }
+
+    serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, "utf8"));
+    console.log("✅ Firebase: loaded credentials from local service account file");
+  }
 
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
@@ -36,18 +61,9 @@ function getDb() {
   if (!db) {
     initFirebase();
     db = admin.firestore();
-    // Timestamps stored as actual Timestamps, not JS Date strings
     db.settings({ ignoreUndefinedProperties: true });
   }
   return db;
-}
-
-function getStorage() {
-  if (!storage) {
-    initFirebase();
-    storage = admin.storage();
-  }
-  return storage;
 }
 
 /**
@@ -89,8 +105,8 @@ async function getPurchase(reference) {
 module.exports = {
   initFirebase,
   getDb,
-  getStorage,
   createPurchaseRecord,
   updatePurchaseStatus,
   getPurchase,
 };
+
