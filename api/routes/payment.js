@@ -222,25 +222,35 @@ router.post("/submit-otp", async (req, res) => {
 });
 
 // ── GET /api/payment/status/:reference ────────────────────────────────────────
+/**
+ * GET /api/payment/status/:reference
+ * Returns current payment status from Firestore.
+ * Performs a live check against Lenco if the status is still pending to ensure instant UI updates.
+ */
 router.get("/status/:reference", async (req, res) => {
   try {
     const { reference } = req.params;
-
     const purchase = await firebase.getPurchase(reference);
+
     if (!purchase) {
-      return res.status(404).json({ success: false, message: "Transaction not found." });
+      return res.status(404).json({ success: false, message: "Reference not found." });
     }
 
-    if (["pending", "pay-offline", "otp-required"].includes(purchase.status) && purchase.lencoCollectionId) {
+    // Proactive Check: If still pending/started, query Lenco directly to bypass webhook delay
+    if (purchase.status === "pending" || purchase.status === "started" || purchase.status === "pay-offline") {
       try {
-        const lencoResponse = await lenco.getCollectionStatus(reference);
-        const latestStatus = lencoResponse.data?.status;
-        if (latestStatus && latestStatus !== purchase.status) {
-          await firebase.updatePurchaseStatus(reference, { status: latestStatus });
-          purchase.status = latestStatus;
+        const lencoData = await lenco.getCollectionStatus(reference);
+        
+        // Lenco API structure: { status: true, data: { status: "successful", ... } }
+        const liveStatus = lencoData?.data?.status || lencoData?.status;
+        
+        if (liveStatus && liveStatus !== purchase.status) {
+          console.log(`📡 Live Status Sync: Updating ${reference} from ${purchase.status} to ${liveStatus}`);
+          await firebase.updatePurchaseStatus(reference, { status: liveStatus });
+          return res.json({ success: true, status: liveStatus, reference });
         }
-      } catch (_) {
-        // Fallback
+      } catch (lencoErr) {
+        console.error("⚠️ Lenco Live Check failed (falling back to database status):", lencoErr.message);
       }
     }
 

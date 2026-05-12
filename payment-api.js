@@ -63,15 +63,16 @@ export async function fetchPaymentStatus(reference, signal) {
 // ─────────────────────────────────────────────────────────────────────────────
 export function pollPaymentStatus(reference, callbacks, signal) {
   const { onStatusChange, onSuccess, onError } = callbacks;
-
-  const FIRST_DELAY = 8_000;  // give the STK prompt time to appear on phone
-  const POLL_INTERVAL = 6_000;  // check every 6 s
-  const BACKOFF_429 = 15_000; // back off on rate-limit
+  const FIRST_DELAY = 2_000;  // Start checking almost immediately
+  const POLL_INTERVAL = 2_000; // Check every 2 seconds for snappy updates
+  const BACKOFF_429 = 5_000;  // Quicker recovery from rate limiting
 
   const TERMINAL = new Set([
     "successful", "failed", "cancelled",
     "rejected", "timeout", "expired",
+    "declined", "insufficient_funds", "error"
   ]);
+
 
   const poll = async () => {
     if (signal?.aborted) return; // session was cancelled — stop silently
