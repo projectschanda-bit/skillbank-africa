@@ -41,12 +41,13 @@ lencoClient.interceptors.response.use(
  * Initiate a mobile money collection (STK push).
  *
  * @param {object} params
- * @param {string} params.amount          - Amount in ZMW (e.g. "50.00")
- * @param {string} params.phone           - Customer MSISDN, e.g. "260971234567"
- * @param {string} params.operator        - "mtn-zm" | "airtel-zm"
- * @param {string} params.reference       - Your unique transaction reference
- * @param {string} params.webhookUrl      - URL Lenco will POST status updates to
- * @param {string} [params.description]   - Human-readable reason shown on STK prompt
+ * @param {number|string} params.amount      - Amount to collect (e.g. 35)
+ * @param {string} params.currency           - ISO currency code (e.g. "USD", "ZMW")
+ * @param {string} params.country            - ISO country code, lowercase (e.g. "zm", "ng")
+ * @param {string} params.phone              - Customer MSISDN in international format (e.g. "260971234567")
+ * @param {string} params.operator           - "mtn" | "airtel" | "zamtel"
+ * @param {string} params.reference          - Your unique transaction reference
+ * @param {string} [params.description]      - Human-readable reason shown on STK prompt
  *
  * Possible response statuses:
  *   pending        – request received, processing
@@ -60,7 +61,7 @@ async function initiateMobileMoneyCollection(params) {
     amount: Number(params.amount),
     reference: params.reference,
     phone: params.phone,
-    operator: params.operator, // e.g., "airtel", "mtn"
+    operator: params.operator,  // e.g. "mtn", "airtel", "zamtel"
     country: (params.country || "zm").toLowerCase(),
     callbackUrl: params.webhookUrl || process.env.LENCO_WEBHOOK_URL,
     description: params.description || "SkillBank Africa – course purchase",
@@ -107,5 +108,5 @@ module.exports = {
   initiateMobileMoneyCollection,
   submitOtp,
   getCollectionStatus,
-  getCollectionById,
+  // getCollectionById — available but not currently used by any route
 };

@@ -10,6 +10,34 @@ const firebase = require("../services/firebase");
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+const COUNTRY_MAP = {
+  ZAMBIA: "ZM",
+  NIGERIA: "NG",
+  UGANDA: "UG",
+  GHANA: "GH",
+  RWANDA: "RW",
+  DRC: "CD",
+  CONGO: "CG",
+  GABON: "GA",
+  TANZANIA: "TZ",
+  BENIN: "BJ",
+  MALAWI: "MW"
+};
+
+const PREFIX_MAP = {
+  ZM: "260",
+  NG: "234",
+  UG: "256",
+  GH: "233",
+  RW: "250",
+  CD: "243",
+  CG: "242",
+  GA: "241",
+  TZ: "255",
+  BJ: "229",
+  MW: "265"
+};
+
 /**
  * Generates a short, unique transaction reference for this merchant.
  * Format: SKB-<timestamp ms>-<4 random hex chars>
@@ -20,77 +48,56 @@ function generateReference() {
 }
 
 /**
- * Normalise a phone number to international format (260...) for Zambia.
- * Lenco expects 260976551763 when country is ZM.
+ * Normalise a phone number to international format.
+ * Lenco expects full international number without +
  * @param {string} raw - Raw input from frontend
- * @param {string} country - "ZM" or "NG"
+ * @param {string} country - Country code (ZM, NG, etc.)
  */
 function normalisePhone(raw, country = "ZM") {
   if (!raw) return "";
 
   // 1. Remove all non-digit characters
   let digits = String(raw).replace(/\D/g, "");
+  const prefix = PREFIX_MAP[country] || "260";
 
-  if (country === "ZM") {
-    // Strip 00260, 260, or +260
-    if (digits.startsWith("00260")) {
-      digits = digits.slice(5);
-    } else if (digits.startsWith("260")) {
-      digits = digits.slice(3);
-    }
-
-    // Now we should have the 9-digit local number (e.g. 96... or 97...)
-    // If user provided a leading zero (e.g. 096...), strip it
-    if (digits.length === 10 && digits.startsWith("0")) {
-      digits = digits.slice(1);
-    }
-
-    // Final check for ZM: should be 9 digits now. Prepend 260.
-    if (digits.length === 9) {
-      return "260" + digits;
-    }
-  } else if (country === "NG") {
-    // Nigeria logic (international 234...)
-    if (digits.startsWith("0") && digits.length === 11) {
-      digits = "234" + digits.slice(1);
-    } else if (!digits.startsWith("234") && digits.length === 10) {
-      digits = "234" + digits;
-    }
-    return digits;
+  // Strip prefix if already present
+  if (digits.startsWith(prefix)) {
+    digits = digits.slice(prefix.length);
+  }
+  // Strip leading zero (local format)
+  if (digits.startsWith("0")) {
+    digits = digits.slice(1);
   }
 
-  return digits;
+  // Prepend prefix
+  return prefix + digits;
 }
 
 /**
- * Returns the operator string expected by Lenco (mtn, airtel, zamtel).
+ * Returns the operator string expected by Lenco.
  */
 function getFinalOperator(inputOperator, normPhone, country = "ZM") {
   const op = (inputOperator || "").toLowerCase();
 
+  // Standard operators
+  if (op.includes("mtn")) return "mtn";
+  if (op.includes("airtel")) return "airtel";
+  
+  // Region specific operators
   if (country === "ZM") {
-    if (op.includes("mtn")) return "mtn";
-    if (op.includes("airtel")) return "airtel";
     if (op.includes("zamtel")) return "zamtel";
-
-    // Auto-detect from normalized phone (096..., 097..., 095...)
-    const localPart = normPhone.startsWith("0") ? normPhone.slice(1) : normPhone;
-    if (localPart.startsWith("96") || localPart.startsWith("76")) return "mtn";
-    if (localPart.startsWith("97") || localPart.startsWith("77")) return "airtel";
+    // Strip the ZM country prefix (260) to inspect local number prefixes for Zamtel detection
+    const localPart = normPhone.slice(3);
     if (localPart.startsWith("95") || localPart.startsWith("75")) return "zamtel";
-
-    return "airtel"; // Default fallback
   }
 
   if (country === "NG") {
-    if (op.includes("mtn")) return "mtn";
-    if (op.includes("airtel")) return "airtel";
     if (op.includes("glo")) return "glo";
     if (op.includes("9mobile")) return "9mobile";
-    return "mtn";
+    return "mtn"; // Default for NG
   }
 
-  return op;
+  return op || "mtn";
 }
 
 // ── POST /api/payment/initiate ─────────────────────────────────────────────────
@@ -100,8 +107,11 @@ function getFinalOperator(inputOperator, normPhone, country = "ZM") {
 router.post("/initiate", async (req, res) => {
   try {
     const { courseId, courseName, amount, phone, operator, method, currency: reqCurrency } = req.body;
-    const finalCurrency = (reqCurrency || "ZMW").toUpperCase();
-    const country = finalCurrency === "NGN" ? "NG" : "ZM";
+    
+    // Resolve ISO country code and billing currency from the region name sent by the frontend
+    const countryName = (reqCurrency || "ZAMBIA").toUpperCase();
+    const country = COUNTRY_MAP[countryName] || "ZM";
+    const finalCurrency = country === "NG" ? "NGN" : (country === "ZM" ? "ZMW" : "USD");
 
     // 1. Validation
     if (!courseId || !courseName) {
@@ -121,7 +131,6 @@ router.post("/initiate", async (req, res) => {
     const finalOperator = getFinalOperator(operator || method, normPhone, country);
     const reference = generateReference();
 
-    // MANDATORY LOGGING FOR VERIFICATION
     console.log(`[PAYMENT] Initiating ${finalCurrency} payment. Phone: ${normPhone}, Operator: ${finalOperator}`);
 
     // 2. Persist initial purchase record

@@ -117,19 +117,36 @@
                 <p class="text-[15px] font-normal leading-relaxed text-white/60 mb-10 max-w-sm">
                     Thank you for your purchase. Your payment has been processed successfully. You can now access your materials.
                 </p>
-                <div class="w-full space-y-4 mb-10">
+                <div class="w-full space-y-4 mb-8">
+                    <!-- Course badge -->
                     <div class="bg-white/5 border border-white/10 rounded-xl p-6 flex flex-col items-center">
                         <span class="material-symbols-outlined text-[32px] text-primary mb-3">description</span>
-                        <h3 id="courseTitle" class="text-sm font-semibold text-white mb-1">Advanced Trading Strategy</h3>
-                        <p class="text-[11px] text-white/40 uppercase tracking-wider">PDF Guide & Resources</p>
+                        <h3 id="courseTitle" class="text-sm font-semibold text-white mb-1">Your Course</h3>
+                        <p class="text-[11px] text-white/40 uppercase tracking-wider">PDF Guide &amp; Resources</p>
+                    </div>
+                    <!-- Receipt rows -->
+                    <div class="bg-white/5 border border-white/10 rounded-xl px-6 py-4 space-y-3 text-left">
+                        <div class="flex justify-between items-center">
+                            <span class="text-[12px] text-white/40 uppercase tracking-wider">Amount Paid</span>
+                            <span id="receiptAmount" class="text-[13px] font-semibold text-tertiary">—</span>
+                        </div>
+                        <div class="flex justify-between items-center border-t border-white/10 pt-3">
+                            <span class="text-[12px] text-white/40 uppercase tracking-wider">Date</span>
+                            <span id="receiptDate" class="text-[13px] font-medium text-white/70">—</span>
+                        </div>
+                        <div class="flex justify-between items-center border-t border-white/10 pt-3">
+                            <span class="text-[12px] text-white/40 uppercase tracking-wider">Email</span>
+                            <span id="receiptEmail" class="text-[13px] font-medium text-white/70 truncate max-w-[180px]">—</span>
+                        </div>
                     </div>
                 </div>
-                <a id="downloadBtn" href="#" download class="w-full bg-white text-[#08060f] font-bold py-4 px-8 rounded-xl hover:bg-white/90 transition-all flex items-center justify-center gap-3 active:scale-[0.98]">
+                <!-- Download button — starts locked; JS unlocks once file path is confirmed -->
+                <a id="downloadBtn" href="#" class="w-full bg-white text-[#08060f] font-bold py-4 px-8 rounded-xl hover:bg-white/90 transition-all flex items-center justify-center gap-3 active:scale-[0.98] opacity-50 pointer-events-none">
                     <span class="material-symbols-outlined">download</span>
                     Download Course Materials
                 </a>
-                <p class="mt-8 text-[12px] text-white/30">
-                    A copy of the download link has been sent to your email.
+                <p class="mt-6 text-[12px] text-white/30">
+                    Reach us at <a href="mailto:support@skillbankafrica.com" class="underline hover:text-white/60">support@skillbankafrica.com</a> for help.
                 </p>
             </div>
         </div>
@@ -137,11 +154,39 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const courseTitle = localStorage.getItem('paymentTitle') || 'Course Materials';
-            const courseFile = localStorage.getItem('paymentFile') || 'course-material.pdf';
-            
+            const courseFile  = localStorage.getItem('paymentFile')  || '';
+            const amount      = localStorage.getItem('paymentAmount') || '';
+            const date        = localStorage.getItem('paymentDate')   || new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
+            const email       = localStorage.getItem('paymentEmail')  || '';
+
+            // Set course title display
             document.getElementById('courseTitle').textContent = courseTitle;
-            document.getElementById('downloadBtn').href = courseFile;
+
+            // Set receipt details
+            const receiptAmount = document.getElementById('receiptAmount');
+            const receiptDate   = document.getElementById('receiptDate');
+            const receiptEmail  = document.getElementById('receiptEmail');
+            if (receiptAmount) receiptAmount.textContent = amount || 'Paid';
+            if (receiptDate)   receiptDate.textContent   = date;
+            if (receiptEmail && email) receiptEmail.textContent = email;
+
+            // Wire download button — use relative path from root
+            const downloadBtn = document.getElementById('downloadBtn');
+            if (courseFile) {
+                downloadBtn.href = courseFile;
+                downloadBtn.setAttribute('download', courseTitle.replace(/[^a-z0-9]/gi, '_') + '.pdf');
+                downloadBtn.classList.remove('opacity-50', 'pointer-events-none');
+            } else {
+                // No file — hide download, show contact support
+                downloadBtn.textContent = 'Contact Support';
+                downloadBtn.removeAttribute('download');
+                downloadBtn.href = 'mailto:support@skillbankafrica.com?subject=Download%20Link&body=Order%20placed%20on%20' + encodeURIComponent(date);
+            }
+
+            // Clear sensitive payment data after reading (optional)
+            // localStorage.removeItem('paymentRef');
         });
     </script>
 </body>
 </html>
+

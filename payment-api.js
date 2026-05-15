@@ -1,6 +1,5 @@
-// payment-api.js — Cancellable Session Version
-// Place in: skillbank-africa/ (same level as index.html)
-// This is the CORRECT version. Do NOT replace with the old polling-only version.
+// payment-api.js
+// Client-side API layer: initiates payments, polls status, and manages cancellable sessions.
 
 // ── Backend Configuration ───────────────────────────────────────────────────
 // On Vercel, the frontend and backend share the same domain.

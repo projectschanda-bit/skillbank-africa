@@ -1,6 +1,5 @@
 // script.js — SkillBank Africa
-// CORRECT version: activeSession guards, 59-second countdown, proper modal steps.
-// Do NOT let any agent revert this to the isProcessing boolean pattern.
+// Controls the payment modal, currency converter, countdown timer, and session lifecycle.
 
 import { runPaymentFlow, PaymentSession } from "./payment-api.js";
 
@@ -47,18 +46,21 @@ let countdownTimer = null;
 // Exchange rates vs USD — update these periodically or pull from an API
 // ─────────────────────────────────────────────────────────────────────────────
 const RATES = {
-  zmw: { symbol: "K", rate: 26.5, label: "🇿🇲 Zambia (K)" },
-  ngn: { symbol: "₦", rate: 1580, label: "🇳🇬 Nigeria (₦)" },
-  kes: { symbol: "KSh", rate: 129, label: "🇰🇪 Kenya (KSh)" },
-  ghs: { symbol: "GH₵", rate: 15.8, label: "🇬🇭 Ghana (GH₵)" },
-  ugx: { symbol: "USh", rate: 3720, label: "🇺🇬 Uganda (USh)" },
-  tzs: { symbol: "TSh", rate: 2580, label: "🇹🇿 Tanzania (TSh)" },
-  xof: { symbol: "CFA", rate: 615, label: "🇸🇳 Senegal (CFA)" },
-  etb: { symbol: "Br", rate: 113, label: "🇪🇹 Ethiopia (Br)" },
-  usd: { symbol: "$", rate: 1, label: "USD (International)" },
+  zambia: { symbol: "$", rate: 1, label: "🇿🇲 Zambia (USD)" },
+  nigeria: { symbol: "$", rate: 1, label: "🇳🇬 Nigeria (USD)" },
+  uganda: { symbol: "$", rate: 1, label: "🇺🇬 Uganda (USD)" },
+  ghana: { symbol: "$", rate: 1, label: "🇬🇭 Ghana (USD)" },
+  rwanda: { symbol: "$", rate: 1, label: "🇷🇼 Rwanda (USD)" },
+  drc: { symbol: "$", rate: 1, label: "🇨🇩 DRC (USD)" },
+  congo: { symbol: "$", rate: 1, label: "🇨🇬 Congo Brazzaville (USD)" },
+  gabon: { symbol: "$", rate: 1, label: "🇬🇦 Gabon (USD)" },
+  tanzania: { symbol: "$", rate: 1, label: "🇹🇿 Tanzania (USD)" },
+  benin: { symbol: "$", rate: 1, label: "🇧🇯 Benin (USD)" },
+  malawi: { symbol: "$", rate: 1, label: "🇲🇼 Malawi (USD)" },
+  usd: { symbol: "$", rate: 1, label: "🌍 Other (USD)" },
 };
 
-let currentCurrency = localStorage.getItem('selectedCurrency') || "zmw";
+let currentCurrency = localStorage.getItem('selectedCurrency') || "zambia";
 
 function updatePrices() {
   const { symbol, rate } = RATES[currentCurrency];
@@ -67,10 +69,15 @@ function updatePrices() {
     if (!isNaN(usd)) {
       const converted = Math.round(usd * rate);
       const priceEl = card.querySelector(".card-price");
-      if (priceEl) priceEl.textContent = `${symbol}${converted.toLocaleString()}`;
+      if (priceEl) {
+        if (currentCurrency === 'usd') {
+          priceEl.innerHTML = `$${usd}`;
+        } else {
+          priceEl.innerHTML = `$${usd} <br><small class="text-sm opacity-60 font-medium">≈ ${symbol}${converted.toLocaleString()}</small>`;
+        }
+      }
     }
   });
-  // Also update the pay button label if step1 is visible
   if (activeCourse) updatePayBtnLabel();
 }
 
@@ -287,7 +294,7 @@ async function initiatePayment() {
       id: activeCourse.id,
       name: activeCourse.name,
       price: localPrice,
-      operator: selectedMethod === "airtel" ? "airtel-zm" : "mtn-zm",
+      operator: selectedMethod === "airtel" ? "airtel" : "mtn",
     },
     phone,
     {
@@ -361,18 +368,3 @@ if (retryBtn) {
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// "GET IT NOW" BUTTONS — product cards on main page
-// ─────────────────────────────────────────────────────────────────────────────
-document.querySelectorAll("[data-course]").forEach(btn => {
-  btn.addEventListener("click", () => {
-    const el = btn.closest("[data-course-id]") || btn;
-    openPayment({
-      id: el.dataset.courseId || btn.dataset.courseId,
-      name: el.dataset.courseName || btn.dataset.courseName,
-      price: parseFloat(el.dataset.coursePrice || btn.dataset.coursePrice), // USD
-      file: el.dataset.courseFile || btn.dataset.courseFile,
-      img: el.dataset.courseImg || btn.dataset.courseImg || "",
-    });
-  });
-});

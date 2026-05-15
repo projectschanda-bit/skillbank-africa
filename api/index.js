@@ -1,4 +1,4 @@
-// server.js
+// index.js
 // SkillBank Africa – Lenco payment gateway backend
 // ─────────────────────────────────────────────────
 // Local dev:  npm run dev   (nodemon)
@@ -53,7 +53,11 @@ app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 // CORS – allow requests from same origin and local dev
 app.use(
   cors({
-    origin: ["http://localhost:5500", /\.vercel\.app$/],
+    origin: [
+      "http://localhost:3000",
+      "http://localhost:5500",
+      /\.vercel\.app$/,
+    ],
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })

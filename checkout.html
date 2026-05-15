@@ -113,8 +113,19 @@
         .brand-logo {
             width: 32px;
             height: 32px;
-            object-fit: contain;
-            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #countrySelect {
+            background-color: #1d1830;
+            color: #e7deff;
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        #countrySelect option {
+            background-color: #141027;
+            color: #e7deff;
+            padding: 12px;
         }
     </style>
 </head>
@@ -143,7 +154,7 @@
                         <p class="font-label-sm text-label-sm text-on-surface-variant mb-1 uppercase tracking-widest">Total to Pay</p>
                         <div class="flex flex-col items-center">
                             <p id="displayPriceUsd" class="font-['Bricolage_Grotesque'] font-[800] text-price-xl bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">$35</p>
-                            <p id="displayPriceLocal" class="font-label-sm text-label-sm text-on-surface-variant mt-1 font-medium">≈ K928</p>
+                            <p id="displayPriceLocal" class="font-label-sm text-label-sm text-on-surface-variant mt-1 font-medium"></p>
                         </div>
                     </div>
                     <div class="space-y-4">
@@ -193,21 +204,35 @@
 
                 <!-- Form Section -->
                 <form id="checkoutForm" class="space-y-6 mb-8">
-                    <div id="phoneInputContainer" class="space-y-2">
-                        <label class="block font-label-sm text-label-sm text-on-surface-variant mb-2 uppercase tracking-wider">Country & Mobile Number</label>
-                        <div class="flex bg-surface-container-low border border-white/10 rounded-xl overflow-hidden focus-within:border-secondary transition-all">
-                            <select id="countrySelect" class="bg-white/5 border-none text-on-surface focus:ring-0 px-4 py-3 font-body-md text-body-md border-r border-white/10 cursor-pointer appearance-none">
-                                <option value="zmw" selected>🇿🇲 Zambia</option>
-                                <option value="ngn">🇳🇬 Nigeria</option>
-                                <option value="kes">🇰🇪 Kenya</option>
-                                <option value="ghs">🇬🇭 Ghana</option>
-                                <option value="zar">🇿🇦 South Africa</option>
-                                <option value="other">🌍 Other</option>
-                            </select>
-                            <div class="px-4 py-3 bg-white/5 border-r border-white/10 flex items-center gap-2 text-on-surface min-w-[80px] justify-center">
-                                <span id="countryCodeDisplay">+260</span>
+                    <div id="phoneInputContainer" class="space-y-4">
+                        <div class="space-y-2">
+                            <label class="block font-label-sm text-label-sm text-on-surface-variant mb-2 uppercase tracking-wider">Country / Region</label>
+                            <div class="bg-surface-container-low border border-white/10 rounded-xl overflow-hidden focus-within:border-secondary transition-all">
+                                <select id="countrySelect" class="w-full bg-transparent border-none text-on-surface focus:ring-0 px-4 py-3 font-body-md text-body-md cursor-pointer appearance-none">
+                                    <option value="zambia" selected>🇿🇲 Zambia (USD)</option>
+                                    <option value="nigeria">🇳🇬 Nigeria (USD)</option>
+                                    <option value="uganda">🇺🇬 Uganda (USD)</option>
+                                    <option value="ghana">🇬🇭 Ghana (USD)</option>
+                                    <option value="rwanda">🇷🇼 Rwanda (USD)</option>
+                                    <option value="drc">🇨🇩 DRC (USD)</option>
+                                    <option value="congo">🇨🇬 Congo (USD)</option>
+                                    <option value="gabon">🇬🇦 Gabon (USD)</option>
+                                    <option value="tanzania">🇹🇿 Tanzania (USD)</option>
+                                    <option value="benin">🇧🇯 Benin (USD)</option>
+                                    <option value="malawi">🇲🇼 Malawi (USD)</option>
+                                    <option value="usd">🌍 Other (USD)</option>
+                                </select>
                             </div>
-                            <input id="phoneNumber" class="flex-1 bg-transparent border-none text-on-surface placeholder:text-outline focus:ring-0 px-4 py-3 font-body-md text-body-md" placeholder="96 123 4567" type="tel" required/>
+                        </div>
+
+                        <div class="space-y-2">
+                            <label class="block font-label-sm text-label-sm text-on-surface-variant mb-2 uppercase tracking-wider">Phone Number</label>
+                            <div class="flex bg-surface-container-low border border-white/10 rounded-xl overflow-hidden focus-within:border-secondary transition-all">
+                                <div class="px-4 py-3 bg-white/5 border-r border-white/10 flex items-center gap-2 text-on-surface min-w-[80px] justify-center">
+                                    <span id="countryCodeDisplay">+260</span>
+                                </div>
+                                <input id="phoneNumber" class="flex-1 bg-transparent border-none text-on-surface placeholder:text-outline focus:ring-0 px-4 py-3 font-body-md text-body-md" placeholder="96 123 4567" type="tel" required/>
+                            </div>
                         </div>
                     </div>
 
@@ -262,18 +287,24 @@
         const file = params.get('file') || localStorage.getItem('courseFile') || '';
 
         const RATES = {
-            zmw: { symbol: "K", rate: 26.5, code: "+260", supportsMoMo: true },
-            ngn: { symbol: "₦", rate: 1580, code: "+234", supportsMoMo: true },
-            kes: { symbol: "KSh", rate: 130, code: "+254", supportsMoMo: false },
-            ghs: { symbol: "GH₵", rate: 14, code: "+233", supportsMoMo: false },
-            zar: { symbol: "R", rate: 18.5, code: "+27", supportsMoMo: false },
-            other: { symbol: "$", rate: 1, code: "", supportsMoMo: false },
+            zambia: { symbol: "$", rate: 1, code: "+260", supportsMoMo: true },
+            nigeria: { symbol: "$", rate: 1, code: "+234", supportsMoMo: true },
+            uganda: { symbol: "$", rate: 1, code: "+256", supportsMoMo: true },
+            ghana: { symbol: "$", rate: 1, code: "+233", supportsMoMo: true },
+            rwanda: { symbol: "$", rate: 1, code: "+250", supportsMoMo: true },
+            drc: { symbol: "$", rate: 1, code: "+243", supportsMoMo: true },
+            congo: { symbol: "$", rate: 1, code: "+242", supportsMoMo: true },
+            gabon: { symbol: "$", rate: 1, code: "+241", supportsMoMo: true },
+            tanzania: { symbol: "$", rate: 1, code: "+255", supportsMoMo: true },
+            benin: { symbol: "$", rate: 1, code: "+229", supportsMoMo: true },
+            malawi: { symbol: "$", rate: 1, code: "+265", supportsMoMo: true },
+            usd: { symbol: "$", rate: 1, code: "", supportsMoMo: false },
         };
 
         const LOGOS = {
-            mtn: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/af/MTN_Logo.svg/100px-MTN_Logo.svg.png',
-            airtel: 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/22/Airtel_logo.svg/100px-Airtel_logo.svg.png',
-            card: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Visa_Inc._logo.svg/100px-Visa_Inc._logo.svg.png'
+            mtn: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="50" fill="#FFCC00"/><path d="M25 65V35L35 55L45 35V65M55 35H85M70 35V65M15 35H25L35 50L45 35H55V65H45V45L35 65L25 45V65H15V35Z" fill="#000" display="none"/><text x="50" y="65" font-family="Arial" font-weight="900" font-size="32" text-anchor="middle" fill="#000">MTN</text></svg>`,
+            airtel: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" rx="20" fill="#FF0000"/><path d="M50 20L20 80H35L50 45L65 80H80L50 20Z" fill="#FFF"/></svg>`,
+            card: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" rx="10" fill="#1A1F71"/><path d="M20 35H30L35 65H25L20 35ZM45 35H80V45H55V50H75V60H55V65H45V35Z" fill="#F7B600" display="none"/><text x="50" y="65" font-family="Arial" font-weight="bold" font-size="40" text-anchor="middle" fill="#FFF">VISA</text></svg>`
         };
 
         const methodContainer = document.getElementById('methodContainer');
@@ -289,16 +320,10 @@
             ];
             
             if (supportsMoMo) {
-                if (currency === 'zmw') {
-                    availableMethods.unshift(
-                        { id: 'mtn', name: 'MTN MoMo', icon: LOGOS.mtn },
-                        { id: 'airtel', name: 'Airtel Money', icon: LOGOS.airtel }
-                    );
-                } else if (currency === 'ngn') {
-                    availableMethods.unshift(
-                        { id: 'mtn', name: 'MTN MoMo', icon: LOGOS.mtn }
-                    );
-                }
+                availableMethods.unshift(
+                    { id: 'mtn', name: 'MTN MoMo', icon: LOGOS.mtn },
+                    { id: 'airtel', name: 'Airtel Money', icon: LOGOS.airtel }
+                );
             }
 
             availableMethods.forEach((m, idx) => {
@@ -306,8 +331,8 @@
                 div.className = `method-btn rounded-[20px] bg-white/[0.03] border border-white/10 p-5 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-all ${idx === 0 ? 'selected' : ''}`;
                 div.innerHTML = `
                     <div class="flex items-center gap-4">
-                        <div class="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center flex-shrink-0 border border-white/10">
-                            <img src="${m.icon}" class="brand-logo" alt="${m.name}">
+                        <div class="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center flex-shrink-0 border border-white/10 p-2">
+                            ${m.icon}
                         </div>
                         <div>
                             <h4 class="font-body-lg text-body-lg text-on-surface font-bold">${m.name}</h4>
@@ -350,7 +375,7 @@
 
         function updateUI() {
             const currency = countrySelect.value;
-            const rateData = RATES[currency] || RATES['zmw'];
+            const rateData = RATES[currency] || RATES['zambia'];
             
             currentLocalPrice = Math.round(priceUsd * rateData.rate);
             const formattedLocal = `${rateData.symbol}${currentLocalPrice.toLocaleString()}`;
