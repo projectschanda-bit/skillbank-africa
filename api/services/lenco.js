@@ -57,13 +57,20 @@ lencoClient.interceptors.response.use(
  *   failed         – payment failed
  */
 async function initiateMobileMoneyCollection(params) {
+  // Ensure phone has the + prefix for international format if it starts with a country code
+  let finalPhone = params.phone;
+  if (finalPhone && !finalPhone.startsWith("+")) {
+    finalPhone = "+" + finalPhone;
+  }
+
   const payload = {
     amount: Number(params.amount),
-    currency: (params.currency || "ZMW").toUpperCase(),  // REQUIRED: billing currency e.g. "ZMW"
+    currency: (params.currency || "ZMW").toUpperCase(),
     reference: params.reference,
-    phone: params.phone,
-    operator: params.operator,  // e.g. "mtn", "airtel", "zamtel"
-    network: (params.operator || "").toUpperCase(),  // e.g. "MTN", "AIRTEL" — strict requirement
+    phone: finalPhone,
+    operator: (params.operator || "mtn").toLowerCase(), // Docs say "mtn" or "airtel"
+    provider: (params.operator || "mtn").toLowerCase(), // Some regional Lenco APIs use 'provider'
+    network: (params.operator || "mtn").toUpperCase(),   // Some regional Lenco APIs use 'network'
     country: (params.country || "zm").toLowerCase(),
     callbackUrl: params.webhookUrl || process.env.LENCO_WEBHOOK_URL,
     description: params.description || "SkillBank Africa – course purchase",
@@ -73,8 +80,14 @@ async function initiateMobileMoneyCollection(params) {
   // ── DEBUG: log exact payload so we can see what Lenco receives ──
   console.log("[LENCO] STK Push payload:", JSON.stringify(payload, null, 2));
 
-  const { data } = await lencoClient.post("/collections/mobile-money", payload);
-  return data; // { status, message, data: { id, reference, status, … } }
+  try {
+    const { data } = await lencoClient.post("/collections/mobile-money", payload);
+    return data; 
+  } catch (err) {
+    // Re-throw with enriched message from interceptor, or fallback
+    console.error("[LENCO] Initiation API Error Object:", JSON.stringify(err.lencoData || {}, null, 2));
+    throw err;
+  }
 }
 
 /**

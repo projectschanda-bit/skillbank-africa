@@ -184,13 +184,19 @@ router.post("/initiate", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("❌ /payment/initiate error:", err.message, err.lencoData || "");
+    console.error("❌ /payment/initiate error:", err.message);
+    if (err.lencoData) {
+      console.error("[LENCO] Detailed Error Response:", JSON.stringify(err.lencoData, null, 2));
+    }
 
     const errorDetail = err.lencoData || {};
-    let friendlyMessage = err.message || "Failed to initiate payment.";
+    // Extract the absolute specific message from Lenco if available
+    const lencoMessage = errorDetail.message || errorDetail.error;
+    let friendlyMessage = lencoMessage || err.message || "Failed to initiate payment.";
 
-    if (errorDetail.message === "Invalid phone") {
-      friendlyMessage = "The phone number format is invalid. Please check and try again.";
+    if (friendlyMessage.toLowerCase().includes("account details was not found") || 
+        friendlyMessage.toLowerCase().includes("account not found")) {
+      friendlyMessage = "Mobile Money Account not found. Please verify your phone number and selected network.";
     }
 
     return res.status(err.status || 500).json({
