@@ -124,8 +124,8 @@
                 <div class="absolute top-0 left-0 w-full h-1.5 bg-white/5 overflow-hidden rounded-t-2xl">
                     <div id="progressBar" class="h-full w-0 bg-gradient-to-r from-primary to-secondary shadow-[0_0_8px_rgba(255,177,198,0.5)] transition-all duration-1000"></div>
                 </div>
-                <button onclick="window.history.back()" class="absolute top-6 right-6 p-2 rounded-full hover:bg-white/5 transition-colors text-white/40 hover:text-white">
-                    <span class="material-symbols-outlined text-xl">close</span>
+                <button id="closeBtn" class="absolute top-6 right-6 p-2 rounded-full hover:bg-white/5 transition-all text-white/40 hover:text-white group">
+                    <span class="material-symbols-outlined text-xl group-hover:scale-110 transition-transform">close</span>
                 </button>
                 <div class="absolute w-40 h-40 bg-primary/20 blur-[60px] rounded-full pointer-events-none"></div>
                 <div class="flex flex-col items-center justify-center relative z-10 w-full">
@@ -183,24 +183,41 @@
             window.location.href = 'index.html';
         }
 
-        // ── AbortController: single kill-switch for all polling ─────────────
+        // ── HARD KILL infrastructure ────────────────────────────────────────
         const pollCtrl = new AbortController();
         const pollSignal = pollCtrl.signal;
         let stopped = false;
+        const pendingTimers = [];  // track ALL setTimeout IDs
 
         function killPolling() {
             if (stopped) return;
             stopped = true;
+            // 1. Abort any in-flight fetch
             pollCtrl.abort();
+            // 2. Kill the countdown interval
             clearInterval(countdown);
+            // 3. Kill every scheduled future poll
+            pendingTimers.forEach(id => clearTimeout(id));
+            pendingTimers.length = 0;
+            console.log('[SkillBank] Polling killed. No further requests will fire.');
         }
 
-        // Close/back button kills polling immediately
-        document.querySelector('button[onclick]')?.removeAttribute('onclick');
-        document.querySelector('button')?.addEventListener('click', () => {
-            killPolling();
-            window.history.back();
-        });
+        function safeTimeout(fn, ms) {
+            if (stopped) return;  // don't schedule if already dead
+            const id = setTimeout(fn, ms);
+            pendingTimers.push(id);
+            return id;
+        }
+
+        // Close/back button — hard kill
+        const closeBtn = document.getElementById('closeBtn');
+        if (closeBtn) {
+            closeBtn.removeAttribute('onclick');
+            closeBtn.addEventListener('click', () => {
+                killPolling();
+                window.location.href = 'checkout.html';
+            });
+        }
 
         // ── Countdown timer (60 s) ─────────────────────────────────────────
         let timeLeft = 60;
@@ -220,9 +237,9 @@
             }
         }, 1000);
 
-        // ── Status polling with abort support ──────────────────────────────
+        // ── Status polling — every request is abortable ────────────────────
         async function checkStatus() {
-            if (stopped || pollSignal.aborted) return; // hard stop
+            if (stopped || pollSignal.aborted) return;
 
             try {
                 const result = await fetchPaymentStatus(reference, pollSignal);
@@ -234,23 +251,21 @@
                 if (['successful', 'completed', 'success'].includes(status)) {
                     killPolling();
                     window.location.href = 'success.html';
-                } else if (['failed', 'cancelled', 'rejected', 'timeout', 'expired'].includes(status)) {
+                } else if (['failed', 'cancelled', 'rejected', 'timeout', 'expired', 'declined'].includes(status)) {
                     killPolling();
                     window.location.href = 'failed.html';
                 } else {
-                    // Still pending — schedule next check only if not stopped
-                    if (!stopped) setTimeout(checkStatus, 3000);
+                    safeTimeout(checkStatus, 3000);
                 }
             } catch (err) {
-                if (err.name === 'AbortError' || stopped) return; // clean kill
+                if (err.name === 'AbortError' || stopped) return;
                 console.error('[SkillBank] Status check failed:', err.message);
-                // Retry once after 5s, but only if not stopped
-                if (!stopped) setTimeout(checkStatus, 5000);
+                safeTimeout(checkStatus, 5000);
             }
         }
 
-        // Start polling
-        checkStatus();
+        // Start first poll after 2s delay
+        safeTimeout(checkStatus, 2000);
     </script>
 </body>
 </html>
