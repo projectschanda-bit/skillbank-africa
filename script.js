@@ -46,34 +46,37 @@ let countdownTimer = null;
 // Exchange rates vs USD — update these periodically or pull from an API
 // ─────────────────────────────────────────────────────────────────────────────
 const RATES = {
-  zambia: { symbol: "$", rate: 1, label: "🇿🇲 Zambia (USD)" },
-  nigeria: { symbol: "$", rate: 1, label: "🇳🇬 Nigeria (USD)" },
-  uganda: { symbol: "$", rate: 1, label: "🇺🇬 Uganda (USD)" },
-  ghana: { symbol: "$", rate: 1, label: "🇬🇭 Ghana (USD)" },
-  rwanda: { symbol: "$", rate: 1, label: "🇷🇼 Rwanda (USD)" },
-  drc: { symbol: "$", rate: 1, label: "🇨🇩 DRC (USD)" },
-  congo: { symbol: "$", rate: 1, label: "🇨🇬 Congo Brazzaville (USD)" },
-  gabon: { symbol: "$", rate: 1, label: "🇬🇦 Gabon (USD)" },
-  tanzania: { symbol: "$", rate: 1, label: "🇹🇿 Tanzania (USD)" },
-  benin: { symbol: "$", rate: 1, label: "🇧🇯 Benin (USD)" },
-  malawi: { symbol: "$", rate: 1, label: "🇲🇼 Malawi (USD)" },
-  usd: { symbol: "$", rate: 1, label: "🌍 Other (USD)" },
+  //            symbol  rate  localSymbol  localRate (USD→local, for display only)
+  zambia:   { symbol: "$", rate: 1, label: "🇿🇲 Zambia (USD)",            localSymbol: "ZMW", localRate: 26.5  },
+  nigeria:  { symbol: "$", rate: 1, label: "🇳🇬 Nigeria (USD)",           localSymbol: "NGN", localRate: 1580  },
+  uganda:   { symbol: "$", rate: 1, label: "🇺🇬 Uganda (USD)",            localSymbol: "UGX", localRate: 3750  },
+  ghana:    { symbol: "$", rate: 1, label: "🇬🇭 Ghana (USD)",             localSymbol: "GHS", localRate: 15.5  },
+  rwanda:   { symbol: "$", rate: 1, label: "🇷🇼 Rwanda (USD)",            localSymbol: "RWF", localRate: 1380  },
+  drc:      { symbol: "$", rate: 1, label: "🇨🇩 DRC (USD)",               localSymbol: "CDF", localRate: 2780  },
+  congo:    { symbol: "$", rate: 1, label: "🇨🇬 Congo Brazzaville (USD)", localSymbol: "XAF", localRate: 605   },
+  gabon:    { symbol: "$", rate: 1, label: "🇬🇦 Gabon (USD)",             localSymbol: "XAF", localRate: 605   },
+  tanzania: { symbol: "$", rate: 1, label: "🇹🇿 Tanzania (USD)",          localSymbol: "TZS", localRate: 2650  },
+  benin:    { symbol: "$", rate: 1, label: "🇧🇯 Benin (USD)",             localSymbol: "XOF", localRate: 605   },
+  malawi:   { symbol: "$", rate: 1, label: "🇲🇼 Malawi (USD)",            localSymbol: "MWK", localRate: 1730  },
+  usd:      { symbol: "$", rate: 1, label: "🌍 Other (USD)",              localSymbol: null,  localRate: 1     },
 };
 
 let currentCurrency = localStorage.getItem('selectedCurrency') || "zambia";
 
 function updatePrices() {
-  const { symbol, rate } = RATES[currentCurrency];
+  const { localSymbol, localRate } = RATES[currentCurrency] || RATES.usd;
   allCards.forEach(card => {
     const usd = parseFloat(card.dataset.price);
     if (!isNaN(usd)) {
-      const converted = Math.round(usd * rate);
       const priceEl = card.querySelector(".card-price");
       if (priceEl) {
-        if (currentCurrency === 'usd') {
+        if (!localSymbol) {
+          // "Other / USD" — no approximation needed
           priceEl.innerHTML = `$${usd}`;
         } else {
-          priceEl.innerHTML = `$${usd} <br><small class="text-sm opacity-60 font-medium">≈ ${symbol}${converted.toLocaleString()}</small>`;
+          const localAmt = Math.round(usd * localRate).toLocaleString();
+          priceEl.innerHTML =
+            `$${usd}<br><small class="text-sm opacity-60 font-medium">≈ ${localSymbol} ${localAmt}</small>`;
         }
       }
     }
@@ -138,34 +141,32 @@ methodBtns.forEach(btn => {
 // OPEN / CLOSE MODAL
 // ─────────────────────────────────────────────────────────────────────────────
 window.openPayment = function(courseOrBtn) {
-  cancelActiveSession();  // ← kill any previous orphaned session first
+  cancelActiveSession();  // kill any previous orphaned session first
 
   let course;
   if (courseOrBtn instanceof HTMLElement) {
     const el = courseOrBtn.closest(".course-card") || courseOrBtn;
     course = {
-      id: el.dataset.id || "1",
-      name: el.dataset.title || "Course",
-      price: parseFloat(el.dataset.price) || 0, // USD
-      file: el.dataset.file || "",
-      img: ""
+      id:    el.dataset.id    || "1",
+      name:  el.dataset.title || "Course",
+      price: parseFloat(el.dataset.price) || 0,  // USD
+      file:  el.dataset.file  || "",
+      img:   "",
     };
   } else {
     course = courseOrBtn;
   }
 
-  // Save course data to localStorage for persistence
-  localStorage.setItem('courseId', course.id);
-  localStorage.setItem('courseTitle', course.name);
-  localStorage.setItem('coursePriceUsd', course.price);
-  localStorage.setItem('courseFile', course.file);
-  localStorage.setItem('selectedCurrency', currentCurrency);
+  activeCourse = course;  // make available to initiatePayment
+  updatePayBtnLabel();    // sync the Pay button label
 
-  // Navigate to checkout.html
-  const url = `checkout.html?id=${encodeURIComponent(course.id)}&title=${encodeURIComponent(course.name)}&priceUsd=${encodeURIComponent(course.price)}&currency=${encodeURIComponent(currentCurrency)}&file=${encodeURIComponent(course.file)}`;
-  console.log("Redirecting to:", url);
-  window.location.href = url;
-}
+  // Open the embedded payment modal and show step 1 (phone input)
+  if (payModal) {
+    payModal.classList.remove("hidden");
+    payModal.classList.add("flex");
+  }
+  showStep(1);
+};
 
 function closeModal() {
   cancelActiveSession();     // ← kill any live session when user closes
