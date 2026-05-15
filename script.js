@@ -140,8 +140,8 @@ methodBtns.forEach(btn => {
 // ─────────────────────────────────────────────────────────────────────────────
 // OPEN / CLOSE MODAL
 // ─────────────────────────────────────────────────────────────────────────────
-window.openPayment = function(courseOrBtn) {
-  cancelActiveSession();  // kill any previous orphaned session first
+window.openPayment = function (courseOrBtn) {
+  cancelActiveSession(); // cancel any orphaned session before navigating
 
   let course;
   if (courseOrBtn instanceof HTMLElement) {
@@ -149,24 +149,35 @@ window.openPayment = function(courseOrBtn) {
     course = {
       id:    el.dataset.id    || "1",
       name:  el.dataset.title || "Course",
-      price: parseFloat(el.dataset.price) || 0,  // USD
+      price: parseFloat(el.dataset.price) || 0, // USD
       file:  el.dataset.file  || "",
-      img:   "",
     };
   } else {
     course = courseOrBtn;
   }
 
-  activeCourse = course;  // make available to initiatePayment
-  updatePayBtnLabel();    // sync the Pay button label
-
-  // Open the embedded payment modal and show step 1 (phone input)
-  if (payModal) {
-    payModal.classList.remove("hidden");
-    payModal.classList.add("flex");
+  // Persist for checkout.html to read as a fallback if URL params are stripped
+  try {
+    localStorage.setItem("courseId",       course.id);
+    localStorage.setItem("courseTitle",    course.name);
+    localStorage.setItem("coursePriceUsd", String(course.price));
+    localStorage.setItem("courseFile",     course.file);
+    localStorage.setItem("selectedCurrency", currentCurrency);
+  } catch (e) {
+    console.warn("[SkillBank] localStorage write failed:", e);
   }
-  showStep(1);
+
+  // Build the checkout URL and navigate
+  const params = new URLSearchParams({
+    id:       course.id,
+    title:    course.name,
+    priceUsd: String(course.price),
+    currency: currentCurrency,
+    file:     course.file,
+  });
+  window.location.href = "checkout.html?" + params.toString();
 };
+
 
 function closeModal() {
   cancelActiveSession();     // ← kill any live session when user closes
