@@ -287,18 +287,19 @@
         const file = params.get('file') || localStorage.getItem('courseFile') || '';
 
         const RATES = {
-            zambia: { symbol: "$", rate: 1, code: "+260", supportsMoMo: true },
-            nigeria: { symbol: "$", rate: 1, code: "+234", supportsMoMo: true },
-            uganda: { symbol: "$", rate: 1, code: "+256", supportsMoMo: true },
-            ghana: { symbol: "$", rate: 1, code: "+233", supportsMoMo: true },
-            rwanda: { symbol: "$", rate: 1, code: "+250", supportsMoMo: true },
-            drc: { symbol: "$", rate: 1, code: "+243", supportsMoMo: true },
-            congo: { symbol: "$", rate: 1, code: "+242", supportsMoMo: true },
-            gabon: { symbol: "$", rate: 1, code: "+241", supportsMoMo: true },
-            tanzania: { symbol: "$", rate: 1, code: "+255", supportsMoMo: true },
-            benin: { symbol: "$", rate: 1, code: "+229", supportsMoMo: true },
-            malawi: { symbol: "$", rate: 1, code: "+265", supportsMoMo: true },
-            usd: { symbol: "$", rate: 1, code: "", supportsMoMo: false },
+            //                symbol  rate  code     supportsMoMo  localSymbol  localRate (display only)
+            zambia:   { symbol: "$", rate: 1, code: "+260", supportsMoMo: true,  localSymbol: "ZMW", localRate: 26.5  },
+            nigeria:  { symbol: "$", rate: 1, code: "+234", supportsMoMo: true,  localSymbol: "NGN", localRate: 1580  },
+            uganda:   { symbol: "$", rate: 1, code: "+256", supportsMoMo: true,  localSymbol: "UGX", localRate: 3750  },
+            ghana:    { symbol: "$", rate: 1, code: "+233", supportsMoMo: true,  localSymbol: "GHS", localRate: 15.5  },
+            rwanda:   { symbol: "$", rate: 1, code: "+250", supportsMoMo: true,  localSymbol: "RWF", localRate: 1380  },
+            drc:      { symbol: "$", rate: 1, code: "+243", supportsMoMo: true,  localSymbol: "CDF", localRate: 2780  },
+            congo:    { symbol: "$", rate: 1, code: "+242", supportsMoMo: true,  localSymbol: "XAF", localRate: 605   },
+            gabon:    { symbol: "$", rate: 1, code: "+241", supportsMoMo: true,  localSymbol: "XAF", localRate: 605   },
+            tanzania: { symbol: "$", rate: 1, code: "+255", supportsMoMo: true,  localSymbol: "TZS", localRate: 2650  },
+            benin:    { symbol: "$", rate: 1, code: "+229", supportsMoMo: true,  localSymbol: "XOF", localRate: 605   },
+            malawi:   { symbol: "$", rate: 1, code: "+265", supportsMoMo: true,  localSymbol: "MWK", localRate: 1730  },
+            usd:      { symbol: "$", rate: 1, code: "",     supportsMoMo: false, localSymbol: null,  localRate: 1     },
         };
 
         const LOGOS = {
@@ -376,17 +377,24 @@
         function updateUI() {
             const currency = countrySelect.value;
             const rateData = RATES[currency] || RATES['zambia'];
-            
+
+            // currentLocalPrice is the USD amount sent to the payment API (rate always 1)
             currentLocalPrice = Math.round(priceUsd * rateData.rate);
-            const formattedLocal = `${rateData.symbol}${currentLocalPrice.toLocaleString()}`;
-            
+
+            // Separate local-currency approximation for display only
+            const localAmt = rateData.localSymbol
+                ? `${rateData.localSymbol} ${Math.round(priceUsd * rateData.localRate).toLocaleString()}`
+                : null;
+
             document.getElementById('displayPriceUsd').textContent = `$${priceUsd}`;
-            document.getElementById('displayPriceLocal').textContent = currency === 'other' ? '' : `≈ ${formattedLocal}`;
+            document.getElementById('displayPriceLocal').textContent =
+                localAmt ? `≈ ${localAmt}` : '';
             document.getElementById('countryCodeDisplay').textContent = rateData.code;
-            
-            const payText = currency === 'other' ? `$${priceUsd}` : formattedLocal;
-            document.getElementById('payBtn').innerHTML = `Pay ${payText} Securely <span class="material-symbols-outlined">arrow_forward</span>`;
-            
+
+            // Pay button always shows the USD amount (that is what is charged)
+            document.getElementById('payBtn').innerHTML =
+                `Pay $${priceUsd} Securely <span class="material-symbols-outlined">arrow_forward</span>`;
+
             renderMethods(currency, rateData.supportsMoMo);
         }
 
