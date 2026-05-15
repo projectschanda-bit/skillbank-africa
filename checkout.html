@@ -402,8 +402,16 @@
         document.getElementById('courseTitle').textContent = title;
         updateUI();
 
+        // Bug 3: single isProcessing flag prevents duplicate STK pushes
+        let isProcessing = false;
+
         document.getElementById('checkoutForm').onsubmit = async (e) => {
             e.preventDefault();
+
+            // Bug 3: hard gate — reject if a request is already in-flight
+            if (isProcessing) return;
+            isProcessing = true;
+
             const payBtn = document.getElementById('payBtn');
             payBtn.disabled = true;
             payBtn.innerHTML = `<span class="animate-spin material-symbols-outlined">sync</span> Processing...`;
@@ -411,37 +419,56 @@
             try {
                 const currency = countrySelect.value;
                 const rateData = RATES[currency];
+
+                // Bug 2: clean phone normalisation — strip country prefix then any leading zero
                 const rawPhone = document.getElementById('phoneNumber').value.replace(/\D/g, '');
-                const cleanCode = rateData.code.replace(/\D/g, '');
-                const fullPhone = cleanCode + (rawPhone.startsWith(cleanCode) ? rawPhone.slice(cleanCode.length) : rawPhone);
+                const cleanCode = rateData.code.replace(/\D/g, '');          // e.g. "260"
+                let localDigits = rawPhone.startsWith(cleanCode)
+                    ? rawPhone.slice(cleanCode.length)
+                    : rawPhone;
+                if (localDigits.startsWith('0')) localDigits = localDigits.slice(1); // drop leading 0
+                const fullPhone = cleanCode + localDigits;                    // e.g. "260977123456"
+
+                // Bug 1: send local-currency amount, not USD
+                // Card payments stay in USD; MoMo must match the billing currency.
+                const localAmount = (selectedMethod !== 'card' && rateData.localSymbol)
+                    ? Math.round(priceUsd * rateData.localRate)
+                    : priceUsd;
 
                 const result = await initiatePayment({
-                    amount: currentLocalPrice,
+                    amount: localAmount,                                       // ← Bug 1 fix
                     currency: currency.toUpperCase(),
                     email: document.getElementById('email').value,
-                    phone: selectedMethod === 'card' ? '' : fullPhone,
+                    phone: selectedMethod === 'card' ? '' : fullPhone,         // ← Bug 2 fix
                     method: selectedMethod,
                     courseId: courseId,
                     courseName: title
                 });
 
                 if (result.success && result.reference) {
-                    localStorage.setItem('paymentRef', result.reference);
+                    // Persist receipt data
+                    const displayAmt = rateData.localSymbol
+                        ? `${rateData.localSymbol} ${Math.round(priceUsd * rateData.localRate).toLocaleString()}`
+                        : `$${priceUsd}`;
+                    localStorage.setItem('paymentRef',      result.reference);
                     localStorage.setItem('selectedOperator', selectedMethod);
-                    localStorage.setItem('paymentFile', file);
-                    localStorage.setItem('paymentTitle', title);
+                    localStorage.setItem('paymentFile',     file);
+                    localStorage.setItem('paymentTitle',    title);
                     localStorage.setItem('paymentCurrency', currency);
-                    localStorage.setItem('paymentAmount', currency === 'other' ? `$${priceUsd}` : `${rateData.symbol}${currentLocalPrice.toLocaleString()}`);
-                    localStorage.setItem('paymentEmail', document.getElementById('email').value);
-                    localStorage.setItem('paymentDate', new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }));
+                    localStorage.setItem('paymentAmount',   displayAmt);
+                    localStorage.setItem('paymentEmail',    document.getElementById('email').value);
+                    localStorage.setItem('paymentDate',     new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }));
 
+                    // Navigate — leave isProcessing true so the button stays locked while the page unloads
                     window.location.href = `processing.html?ref=${result.reference}&file=${encodeURIComponent(file)}&title=${encodeURIComponent(title)}&currency=${encodeURIComponent(currency)}`;
                 } else {
                     throw new Error(result.message || "Payment initiation failed.");
                 }
             } catch (err) {
-                console.error(err);
+                // Bug 3: release the lock on failure so the user can retry
+                console.error('[SkillBank] Payment error:', err);
                 alert("Error: " + err.message);
+                isProcessing = false;
                 payBtn.disabled = false;
                 updateUI();
             }
