@@ -168,11 +168,10 @@
         // Dynamic UI based on operator
         const statusTitle = document.getElementById('statusTitle');
         const statusDesc = document.getElementById('statusDesc');
-        
+
         if (operator === 'airtel') {
             statusTitle.textContent = 'Waiting for your Airtel Money PIN…';
             statusDesc.textContent = 'Please check your Airtel phone for the prompt and enter your PIN to complete the payment.';
-            // Optionally change colors to Airtel Red if desired
             document.querySelector('.text-primary-container')?.classList.replace('text-primary-container', 'text-error');
             document.getElementById('progressBar')?.classList.replace('from-primary', 'from-error');
         } else if (operator === 'mtn') {
@@ -184,6 +183,26 @@
             window.location.href = 'index.html';
         }
 
+        // ── AbortController: single kill-switch for all polling ─────────────
+        const pollCtrl = new AbortController();
+        const pollSignal = pollCtrl.signal;
+        let stopped = false;
+
+        function killPolling() {
+            if (stopped) return;
+            stopped = true;
+            pollCtrl.abort();
+            clearInterval(countdown);
+        }
+
+        // Close/back button kills polling immediately
+        document.querySelector('button[onclick]')?.removeAttribute('onclick');
+        document.querySelector('button')?.addEventListener('click', () => {
+            killPolling();
+            window.history.back();
+        });
+
+        // ── Countdown timer (60 s) ─────────────────────────────────────────
         let timeLeft = 60;
         const timerEl = document.getElementById('timer');
         const progressBar = document.getElementById('progressBar');
@@ -196,32 +215,37 @@
             progressBar.style.width = `${((60 - timeLeft) / 60) * 100}%`;
 
             if (timeLeft <= 0) {
-                clearInterval(countdown);
+                killPolling();
                 window.location.href = 'failed.html';
             }
         }, 1000);
 
+        // ── Status polling with abort support ──────────────────────────────
         async function checkStatus() {
-            try {
-                const result = await fetchPaymentStatus(reference);
-                console.log("Status update:", result.status);
+            if (stopped || pollSignal.aborted) return; // hard stop
 
+            try {
+                const result = await fetchPaymentStatus(reference, pollSignal);
+                if (stopped || pollSignal.aborted) return;
+
+                console.log('[SkillBank] Status:', result.status);
                 const status = result.status.toLowerCase();
 
                 if (['successful', 'completed', 'success'].includes(status)) {
-                    clearInterval(countdown);
+                    killPolling();
                     window.location.href = 'success.html';
                 } else if (['failed', 'cancelled', 'rejected', 'timeout', 'expired'].includes(status)) {
-                    clearInterval(countdown);
+                    killPolling();
                     window.location.href = 'failed.html';
                 } else {
-                    // Still pending, poll again in 3 seconds
-                    setTimeout(checkStatus, 3000);
+                    // Still pending — schedule next check only if not stopped
+                    if (!stopped) setTimeout(checkStatus, 3000);
                 }
             } catch (err) {
-                console.error("Status check failed:", err);
-                // Retry after a longer delay on error
-                setTimeout(checkStatus, 5000);
+                if (err.name === 'AbortError' || stopped) return; // clean kill
+                console.error('[SkillBank] Status check failed:', err.message);
+                // Retry once after 5s, but only if not stopped
+                if (!stopped) setTimeout(checkStatus, 5000);
             }
         }
 

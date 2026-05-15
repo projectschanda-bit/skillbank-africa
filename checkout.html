@@ -402,13 +402,39 @@
         document.getElementById('courseTitle').textContent = title;
         updateUI();
 
-        // Bug 3: single isProcessing flag prevents duplicate STK pushes
+        // ── Phone sanitization ──────────────────────────────────────────────
+        // Produces exactly: <countryPrefix><subscriberDigits> with no +, no
+        // leading zero, no spaces. E.g. 260965983286 (12 digits for Zambia).
+        function sanitizePhone(rawInput, countryPrefix) {
+            // 1. Strip everything except digits
+            let cleaned = rawInput.replace(/\D/g, '');
+
+            // 2. Handle "2600xx" — prefix present but with stray leading zero
+            if (cleaned.startsWith(countryPrefix + '0')) {
+                cleaned = countryPrefix + cleaned.substring(countryPrefix.length + 1);
+            }
+
+            // 3. If they typed full international already, accept it
+            if (cleaned.startsWith(countryPrefix) && cleaned.length > countryPrefix.length) {
+                return cleaned;
+            }
+
+            // 4. Local format starting with 0 (e.g. 0965..., 0977...)
+            if (cleaned.startsWith('0')) {
+                cleaned = countryPrefix + cleaned.substring(1);
+                return cleaned;
+            }
+
+            // 5. Bare subscriber number (e.g. 965983286)
+            return countryPrefix + cleaned;
+        }
+
+        // ── Double-submit guard ─────────────────────────────────────────────
         let isProcessing = false;
 
         document.getElementById('checkoutForm').onsubmit = async (e) => {
             e.preventDefault();
 
-            // Bug 3: hard gate — reject if a request is already in-flight
             if (isProcessing) return;
             isProcessing = true;
 
@@ -416,37 +442,39 @@
             payBtn.disabled = true;
             payBtn.innerHTML = `<span class="animate-spin material-symbols-outlined">sync</span> Processing...`;
 
+            // Issue 2: 15-second timeout kill-switch via AbortController
+            const abortCtrl = new AbortController();
+            const timeoutId = setTimeout(() => abortCtrl.abort(), 15_000);
+
             try {
                 const currency = countrySelect.value;
                 const rateData = RATES[currency];
 
-                // Bug 2: clean phone normalisation — strip country prefix then any leading zero
-                const rawPhone = document.getElementById('phoneNumber').value.replace(/\D/g, '');
-                const cleanCode = rateData.code.replace(/\D/g, '');          // e.g. "260"
-                let localDigits = rawPhone.startsWith(cleanCode)
-                    ? rawPhone.slice(cleanCode.length)
-                    : rawPhone;
-                if (localDigits.startsWith('0')) localDigits = localDigits.slice(1); // drop leading 0
-                const fullPhone = cleanCode + localDigits;                    // e.g. "260977123456"
+                // Issue 1: bulletproof phone sanitization
+                const rawPhone = document.getElementById('phoneNumber').value;
+                const countryPrefix = rateData.code.replace(/\D/g, ''); // e.g. "260"
+                const fullPhone = sanitizePhone(rawPhone, countryPrefix);
 
-                // Bug 1: send local-currency amount, not USD
-                // Card payments stay in USD; MoMo must match the billing currency.
+                console.log('[SkillBank] Sanitized phone:', fullPhone, '| Method:', selectedMethod);
+
+                // Local-currency amount for MoMo; USD for card
                 const localAmount = (selectedMethod !== 'card' && rateData.localSymbol)
                     ? Math.round(priceUsd * rateData.localRate)
                     : priceUsd;
 
                 const result = await initiatePayment({
-                    amount: localAmount,                                       // ← Bug 1 fix
+                    amount: localAmount,
                     currency: currency.toUpperCase(),
                     email: document.getElementById('email').value,
-                    phone: selectedMethod === 'card' ? '' : fullPhone,         // ← Bug 2 fix
+                    phone: selectedMethod === 'card' ? '' : fullPhone,
                     method: selectedMethod,
                     courseId: courseId,
                     courseName: title
-                });
+                }, abortCtrl.signal);  // ← pass signal so fetch is abortable
+
+                clearTimeout(timeoutId); // success — cancel the 15s bomb
 
                 if (result.success && result.reference) {
-                    // Persist receipt data
                     const displayAmt = rateData.localSymbol
                         ? `${rateData.localSymbol} ${Math.round(priceUsd * rateData.localRate).toLocaleString()}`
                         : `$${priceUsd}`;
@@ -459,15 +487,20 @@
                     localStorage.setItem('paymentEmail',    document.getElementById('email').value);
                     localStorage.setItem('paymentDate',     new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }));
 
-                    // Navigate — leave isProcessing true so the button stays locked while the page unloads
                     window.location.href = `processing.html?ref=${result.reference}&file=${encodeURIComponent(file)}&title=${encodeURIComponent(title)}&currency=${encodeURIComponent(currency)}`;
                 } else {
                     throw new Error(result.message || "Payment initiation failed.");
                 }
             } catch (err) {
-                // Bug 3: release the lock on failure so the user can retry
-                console.error('[SkillBank] Payment error:', err);
-                alert("Error: " + err.message);
+                clearTimeout(timeoutId);
+
+                const isTimeout = err.name === 'AbortError';
+                const msg = isTimeout
+                    ? 'Payment request timed out after 15 seconds. Please try again.'
+                    : err.message;
+
+                console.error('[SkillBank] Payment error:', msg);
+                alert('Error: ' + msg);
                 isProcessing = false;
                 payBtn.disabled = false;
                 updateUI();
