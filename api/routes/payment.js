@@ -245,10 +245,13 @@ router.get("/status/:reference", async (req, res) => {
       return res.status(404).json({ success: false, message: "Reference not found." });
     }
 
-    // Proactive Check: If still pending/started, query Lenco directly to bypass webhook delay
-    if (purchase.status === "pending" || purchase.status === "started" || purchase.status === "pay-offline") {
+    // Proactive Check: If still pending/started, query Lenco directly to bypass webhook delay.
+    // IMPORTANT: Use getCollectionById (GET /collections/{id}) — a read-only lookup.
+    // Do NOT use getCollectionStatus(reference) which may re-trigger the charge on some API versions.
+    if ((purchase.status === "pending" || purchase.status === "started" || purchase.status === "pay-offline")
+        && purchase.lencoCollectionId) {
       try {
-        const lencoData = await lenco.getCollectionStatus(reference);
+        const lencoData = await lenco.getCollectionById(purchase.lencoCollectionId);
         
         // Lenco API structure: { status: true, data: { status: "successful", ... } }
         const liveStatus = lencoData?.data?.status || lencoData?.status;

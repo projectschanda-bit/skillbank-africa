@@ -62,6 +62,7 @@ async function initiateMobileMoneyCollection(params) {
     reference: params.reference,
     phone: params.phone,
     operator: params.operator,  // e.g. "mtn", "airtel", "zamtel"
+    network: (params.operator || "").toUpperCase(),  // e.g. "MTN", "AIRTEL" — required by some Lenco endpoints
     country: (params.country || "zm").toLowerCase(),
     callbackUrl: params.webhookUrl || process.env.LENCO_WEBHOOK_URL,
     description: params.description || "SkillBank Africa – course purchase",
@@ -108,5 +109,5 @@ module.exports = {
   initiateMobileMoneyCollection,
   submitOtp,
   getCollectionStatus,
-  // getCollectionById — available but not currently used by any route
+  getCollectionById,
 };

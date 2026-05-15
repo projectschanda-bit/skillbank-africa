@@ -258,6 +258,7 @@
                         </label>
                     </div>
 
+                    <div id="payError" class="hidden w-full mb-3 px-4 py-3 rounded-xl bg-error/10 border border-error/30 text-error text-sm font-medium text-center"></div>
                     <button id="payBtn" type="submit" class="w-full py-4 rounded-xl bg-primary text-on-primary font-body-lg text-body-lg font-bold flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(255,73,146,0.3)] hover:shadow-[0_0_30px_rgba(255,73,146,0.5)] transition-all">
                         Pay Securely <span class="material-symbols-outlined">arrow_forward</span>
                     </button>
@@ -500,10 +501,16 @@
                     : err.message;
 
                 console.error('[SkillBank] Payment error:', msg);
-                alert('Error: ' + msg);
+
+                // Show inline error instead of blocking alert
+                const errorDiv = document.getElementById('payError');
+                errorDiv.textContent = msg;
+                errorDiv.classList.remove('hidden');
+                setTimeout(() => errorDiv.classList.add('hidden'), 8000);
+
                 isProcessing = false;
                 payBtn.disabled = false;
-                updateUI();
+                payBtn.innerHTML = `Pay Securely <span class="material-symbols-outlined">arrow_forward</span>`;
             }
         };
     </script>
